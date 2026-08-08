@@ -12,6 +12,13 @@
 # the host. That is deliberate — these are exactly the five things you do not
 # want redeploying themselves unattended.
 
+# Pinned so the compose project — and therefore every volume and container name
+# — is stable no matter which directory this is invoked from. Without it the
+# project takes the parent folder's name, which is `bootstrap`: volumes come out
+# as `bootstrap_komodo-mongo-data`, and they silently change identity if the
+# checkout is ever moved or renamed.
+name: homelab
+
 services:
   # ---- Caddy: reverse proxy for every service on this host ----
   # Routes by container LABEL, not by config file: any container anywhere on

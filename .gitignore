@@ -1,5 +1,8 @@
-# The only secrets file. Never commit it — bootstrap/.env.example documents
-# every key it should contain.
+# Secrets. The pattern is deliberately broad — a file named ".env copy",
+# ".env.bak" or ".env.prod" is still a secrets file, and this repo is public.
+# Only the documented template is allowed through.
 bootstrap/.env
+bootstrap/.env*
+!bootstrap/.env.example
 
 .DS_Store
