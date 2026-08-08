@@ -90,7 +90,7 @@ send_disk_alerts = true
 
 [[procedure]]
 name = "poll-git-redeploy"
-description = "Every 10 min: redeploy any stack whose repo has new commits."
+description = "Every 10 min: apply this repo's declarations, then redeploy any stack whose repo has new commits."
 
 [procedure.config]
 schedule_format = "Cron"
@@ -102,6 +102,31 @@ schedule_timezone = "Asia/Kolkata"
 schedule_alert = false
 failure_alert = true
 
+# Stage 1: apply this repo's declarations.
+#
+# A sync does NOT self-apply. Left alone it notices new commits, computes a
+# diff, parks in `Pending` and waits for someone to press Execute — which means
+# a stack added to apps.toml would sit unapplied until somebody opened the UI.
+# `RunSync` is that Execute, on a schedule.
+#
+# Stages run in order, so declarations land before the deploy stage below:
+# a stack added in the same commit exists by the time anything tries to
+# redeploy it.
+#
+# Note it may update this very procedure mid-run. Harmless — the config was
+# read when the run started; edits take effect on the next firing.
+[[procedure.config.stage]]
+name = "Apply declarations"
+enabled = true
+
+[[procedure.config.stage.execution]]
+enabled = true
+
+[procedure.config.stage.execution.execution]
+type = "RunSync"
+params.sync = "homelab"
+
+# Stage 2: redeploy anything whose own repo moved.
 [[procedure.config.stage]]
 name = "Redeploy changed stacks"
 enabled = true
@@ -111,7 +136,51 @@ enabled = true
 
 [procedure.config.stage.execution.execution]
 type = "BatchDeployStackIfChanged"
-# Every stack. Worth remembering if a stack is ever sourced from THIS repo:
-# any commit here, even a README edit, would then redeploy it. Narrow to a
-# comma-separated list of names if that churn ever matters.
+# Every stack — and `self-update` below is deliberately one of them. It is
+# sourced from THIS repo, so any commit here changes its hash and redeploys it,
+# which is exactly what applies a bootstrap change. A README-only commit runs it
+# too; that costs a git pull and a no-op `compose up`.
 params.pattern = "*"
+
+# ---------------------------------------------------------------------------
+# The stack that updates the bootstrap stack.
+#
+# This is what closes the last manual loop. Komodo cannot deploy the containers
+# it runs inside — Periphery would kill its own compose command — so it deploys
+# this instead, and this does the work from outside the blast radius. See
+# ../../stacks/self-update.yml for the full mechanism.
+#
+# Because it is sourced from this repo, the poller above redeploys it whenever
+# anything here changes, meaning bootstrap edits land within ten minutes with
+# no systemd timer, no cron, and nothing outside Komodo.
+#
+# To force an apply without a commit: Stacks -> self-update -> Deploy.
+# ---------------------------------------------------------------------------
+
+[[stack]]
+name = "self-update"
+description = "One-shot that pulls this repo and applies the bootstrap stack."
+tags = ["infra"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/homelab"
+branch = "main"
+run_directory = "stacks"
+file_paths = ["self-update.yml"]
+# docker:cli is a registry image, so pulling is right and there is nothing to
+# build. Update polling is off: this image is a stable tool, not a service, and
+# an unattended bump of the thing that rewrites the bootstrap stack is the last
+# place to want surprises.
+auto_pull = true
+run_build = false
+poll_for_updates = false
+auto_update = false
+webhook_enabled = true
+# Where the bootstrap checkout lives on the host — the one path this design
+# assumes. Matches BASE_DIR in bootstrap/deploy.sh, which defaults to
+# $HOME/homelab (so /root/homelab when deploy.sh runs as root).
+environment = """
+HOMELAB_DIR=/root/homelab
+"""

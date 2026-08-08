@@ -18,7 +18,7 @@ one.
 ## Layout
 
 ```
-bootstrap/          Layer 1 — run by hand on the host, rarely
+bootstrap/          Layer 1 — run once on a fresh box, then self-applying
   deploy.sh           installs docker, creates the caddy network, runs the below
   docker-compose.yml  caddy, cloudflared, komodo-mongo, komodo-core, komodo-periphery
   .env.example        the only secrets file on the box (5 values)
@@ -38,16 +38,33 @@ jellyfin/           Kubernetes manifest from an earlier experiment.
 
 ### Layer 1: bootstrap
 
-Five services, listed above, and nothing else qualifies. They do not
-auto-update: changing them means editing this repo and re-running `deploy.sh`
-on the host. That is deliberate — these are exactly the things you don't want
-redeploying themselves unattended.
+Five services, listed above, and nothing else qualifies.
+
+A push to this repo reaches them within the hour, via a systemd timer that
+re-runs `deploy.sh` — pull, then `compose up -d`, which is a no-op when nothing
+changed. It has to be systemd and not a Komodo procedure, for the reason at the
+top of this file: a deploy that recreates `komodo-core` would kill the process
+running it. systemd lives outside docker, so such a run survives.
+
+Hourly rather than Komodo's ten minutes, because a change here can briefly
+interrupt ingress or the Komodo UI, and those should never be a surprise.
 
 ### Layer 2: Komodo
 
-Everything else. Komodo reads `komodo/syncs/*.toml`, diffs it against what it
-is running, and applies the difference. A `poll-git-redeploy` procedure runs
-every two minutes and redeploys any stack whose source repo has new commits.
+Everything else. Komodo reads `komodo/syncs/*.toml`, diffs it against what it is
+running, and applies the difference.
+
+The `poll-git-redeploy` procedure runs every ten minutes, in two stages:
+
+1. **`RunSync`** — applies this repo's declarations. Without it a sync only
+   *notices* a change, parks in `Pending`, and waits for someone to press
+   Execute in the UI. This is that press, on a schedule.
+2. **`BatchDeployStackIfChanged`** — redeploys any stack whose own source repo
+   has new commits.
+
+Stages run in order, so a stack added to `apps.toml` exists by the time stage 2
+tries to deploy it. Both happen in one commit's worth of work: push, wait ten
+minutes.
 
 Adding a service does not touch layer 1. It never should.
 

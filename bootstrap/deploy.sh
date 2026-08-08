@@ -12,8 +12,13 @@
 # Run on a fresh box:
 #   curl -fsSL https://raw.githubusercontent.com/namanvashistha/homelab/main/bootstrap/deploy.sh | sudo bash
 #
-# Re-run any time to pull this repo and apply changes to the five services.
-# Idempotent — safe to run repeatedly.
+# After that first run you should not need this again: the `self-update` stack
+# (../stacks/self-update.yml) does the same work from inside Komodo whenever
+# this repo changes. Keep it for two cases — a fresh box, and rescuing a broken
+# bootstrap stack, which self-update cannot do because Komodo is part of what
+# broke.
+#
+# Idempotent either way: `compose up -d` on an unchanged stack is a no-op.
 
 set -euo pipefail
 
