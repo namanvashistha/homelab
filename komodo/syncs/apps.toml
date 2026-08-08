@@ -119,3 +119,33 @@ TELEGRAM_BOT_TOKEN=[[TELEGRAM_BOT_TOKEN]]
 IMAGE_USERNAME=[[IMAGE_USERNAME]]
 IMAGE_DISPLAY_NAME=[[IMAGE_DISPLAY_NAME]]
 """
+
+# salt.md — self-hosted docs/database workspace with an MCP server, one Go
+# binary over one SQLite file. Sourced straight from upstream; Komodo clones
+# the repo so the Dockerfile and web assets come with it.
+#
+# Their compose publishes 8420 on the host and carries no caddy label, so this
+# lands on the LAN at <box-ip>:8420, NOT at a *.namanvashistha.com hostname.
+# Routing it means owning the file: copy docker-compose.yml into
+# stacks/salt/compose.yaml, drop `ports:`, add the two caddy labels.
+#
+# Builds from source (Go + web), so expect the first deploy to take a while.
+# Upstream also publishes ghcr.io/saltmd/salt.md:latest — switching to it also
+# requires owning the file, since their compose has it commented out.
+#
+# Their commits to main redeploy this on the poller's next pass. Pin with
+# `commit = "<sha>"` if that ever matters.
+[[stack]]
+name = "salt"
+description = "salt.md — docs + database workspace with MCP, from saltmd/salt.md."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "saltmd/salt.md"
+branch = "main"
+file_paths = ["docker-compose.yml"]
+run_build = true
+auto_pull = false
+poll_for_updates = false
