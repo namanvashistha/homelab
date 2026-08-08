@@ -62,7 +62,7 @@ webhook_enabled = true
 
 [[stack]]
 name = "foodly"
-description = "Foodly app + MariaDB."
+description = "Foodly app + MariaDB"
 tags = ["app"]
 
 [stack.config]
