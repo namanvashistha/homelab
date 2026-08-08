@@ -30,7 +30,7 @@
 [[stack]]
 name = "chess"
 description = "Multiplayer chess — Go backend, Redis, Postgres."
-tags = ["homelab", "app"]
+tags = ["app"]
 
 [stack.config]
 server = "Local"
@@ -47,7 +47,7 @@ webhook_enabled = true
 [[stack]]
 name = "hyperbole"
 description = "C++ ttyd terminal app."
-tags = ["homelab", "app"]
+tags = ["app"]
 
 [stack.config]
 server = "Local"
@@ -63,7 +63,7 @@ webhook_enabled = true
 [[stack]]
 name = "foodly"
 description = "Foodly app + MariaDB."
-tags = ["homelab", "app"]
+tags = ["app"]
 
 [stack.config]
 server = "Local"
@@ -79,7 +79,7 @@ webhook_enabled = true
 [[stack]]
 name = "limedb"
 description = "Distributed KV store — 4 nodes + web UI."
-tags = ["homelab", "app"]
+tags = ["app"]
 
 [stack.config]
 server = "Local"
@@ -100,7 +100,7 @@ webhook_enabled = true
 [[stack]]
 name = "text-to-image-bot"
 description = "Telegram bot that renders text into cards."
-tags = ["homelab", "app"]
+tags = ["app"]
 
 [stack.config]
 server = "Local"

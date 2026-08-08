@@ -24,7 +24,7 @@ bootstrap/          Layer 1 — run on the host, by hand, rarely
   .env.example        the only secrets file on the box (5 values)
 
 komodo/syncs/       Layer 2 — what Komodo should be running, reconciled from git
-  infra.toml          the server, the redeploy poller, the two boot procedures
+  infra.toml          the server and the poller that keeps git and reality in sync
   apps.toml           one block per application, each from its own repo
 
 jellyfin/           Kubernetes manifest from an earlier experiment.
@@ -105,8 +105,7 @@ curl -fsSL https://raw.githubusercontent.com/namanvashistha/homelab/main/bootstr
 #      repo          namanvashistha/homelab
 #      branch        main
 #      resource path komodo/syncs
-#      match tags    homelab      <- set this BEFORE enabling delete
-#      delete        on
+#      delete        off          <- leave it off, see Conventions
 #    Save, then EXECUTE. Save only stages the diff; Execute applies it.
 ```
 
@@ -137,9 +136,9 @@ Push. The poller picks it up within ten minutes. The app's own compose carries
 its `caddy:` label and joins the external `caddy` network, so routing
 configures itself — nothing to add here or in Cloudflare.
 
-**Something with no repo of its own** — put the compose in `stacks/`, then
-declare it in `infra.toml` with `run_directory = "stacks"` and
-`file_paths = ["yours.yml"]`.
+**Something with no repo of its own** — create `stacks/` (it does not exist yet;
+nothing currently needs it), put the compose there, and declare it in
+`infra.toml` with `run_directory = "stacks"` and `file_paths = ["yours.yml"]`.
 
 **Secrets** go in Komodo (Settings → Variables), never in this repo, and are
 referenced as `[[NAME]]` from a stack's `environment`. Komodo writes them to a
@@ -153,32 +152,33 @@ Mongo. Their security is the database's security.
   outright on a locally built image. CI checks this.
 - **One compose file owns one concern.** One stack per thing that can fail on
   its own — that is what lets Komodo redeploy one without touching the rest.
-- **Named volumes, not *relative* bind mounts,** in `stacks/*.yml`. Komodo clones
-  this repo to `/etc/komodo/stacks/<name>/`, so `./data` silently anchors
-  wherever the clone lands. Absolute host paths are fine and sometimes required
-  — `self-update.yml` mounts `/root/homelab` and the docker socket on purpose,
-  because the daemon, not the container, resolves them.
-- **Tag every declared resource `homelab`.** The sync runs `delete = true`
-  scoped by `match_tags = ["homelab"]`. Untagged means out of scope: never
-  created, never deleted, silently ignored. Tagged and missing from git means
-  deleted. CI enforces the tag.
+- **Named volumes, not *relative* bind mounts,** in any compose file Komodo
+  deploys. It clones each stack to `/etc/komodo/stacks/<name>/`, so `./data`
+  silently anchors wherever the clone landed. Absolute host paths are fine —
+  the daemon resolves those, not the container.
+- **`delete` stays off on the sync.** With it on, Komodo removes anything not
+  declared in these files — and the sync itself cannot be declared here, so it
+  would target itself and fail every run with `ResourceSync busy`, aborting the
+  procedure. Scoping it safely needs `match_tags` plus a tag on every resource,
+  which is more machinery than a homelab deserves. Cost of leaving it off:
+  deleting a block from git stops managing the resource but does not remove it
+  — do that in the UI.
 - **Comments explain *why*, not *what*.** The compose files say what; the
   reasoning behind a weird pinned tag or a missing `ports:` is the part that is
   expensive to reconstruct.
 
 ## Operating notes
 
-- **Where things live on the host:** this repo at `/root/homelab`, Komodo's
-  clones and runtime at `/etc/komodo/stacks/<name>/`, database backups at
-  `/etc/komodo/backups`. That first path is assumed in two places —
-  `HOMELAB_DIR` on the `self-update` stack in `infra.toml`, and `BASE_DIR` in
-  `deploy.sh`. Move the checkout and both need updating.
-- **Redeploy everything by hand:** Komodo → Procedures → `poll-git-redeploy` →
-  Run. That runs the sync and every changed stack, `self-update` included.
-- **Force a bootstrap apply without a commit:** Komodo → Stacks →
-  `self-update` → Deploy. Read its container logs to see what it did.
-- **The bootstrap stack is broken and Komodo is down with it:** the one case
-  nothing here recovers from. SSH in and run `bash ~/homelab/bootstrap/deploy.sh`.
+- **Where things live on the host:** this repo at `~/homelab` (`BASE_DIR` in
+  `deploy.sh`), Komodo's clones and runtime at `/etc/komodo/stacks/<name>/`,
+  database backups at `/etc/komodo/backups`.
+- **Apply everything now, without waiting for the schedule:** Komodo →
+  Procedures → `poll-git-redeploy` → Run. That is the sync plus every changed
+  stack.
+- **Apply a bootstrap change:** `bash ~/homelab/bootstrap/deploy.sh` on the box.
+  Nothing else does this — see Layer 1.
+- **The bootstrap stack is broken and Komodo is down with it:** same command.
+  It is the recovery path precisely because it needs nothing but docker and git.
 - **The Server disappeared:** it is only auto-created on a Core startup where no
   server exists at all. Either restart `komodo-core`, or re-run the sync — it is
   declared in `infra.toml` precisely so this is recoverable.

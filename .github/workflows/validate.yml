@@ -45,9 +45,7 @@ jobs:
           python3 - <<'PY'
           import pathlib, sys, tomllib
 
-          # These assertions each encode a mistake that actually broke the box
-          # once. The last two matter most: the sync runs with delete = true,
-          # so a resource that drops out of scope is not ignored, it is DELETED.
+          # Each assertion encodes a mistake that actually broke the box once.
           errors = []
           for path in sorted(pathlib.Path("komodo/syncs").glob("*.toml")):
               try:
@@ -63,15 +61,6 @@ jobs:
                       f"{path}: declares a [[resource_sync]] — it cannot update "
                       "itself; the sync is hand-created in the UI"
                   )
-
-              for kind in ("stack", "server", "procedure", "deployment", "build"):
-                  for res in doc.get(kind, []):
-                      name = res.get("name", "<unnamed>")
-                      if "homelab" not in res.get("tags", []):
-                          errors.append(
-                              f"{path}: {kind} '{name}' is missing the 'homelab' "
-                              "tag — match_tags would put it out of sync scope"
-                          )
 
               for stack in doc.get("stack", []):
                   name = stack.get("name", "<unnamed>")

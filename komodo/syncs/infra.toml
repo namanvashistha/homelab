@@ -1,142 +1,47 @@
-# Infrastructure resources: the server, the redeploy poller, and the two
-# Procedures Core creates on first boot.
+# The server, and the procedure that keeps everything in sync with git.
+# Apps live in apps.toml.
 #
-# The bootstrap stack (caddy, cloudflared, komodo) is NOT here and cannot be:
-# Komodo would have to recreate the containers it runs inside, and Periphery
-# would kill its own compose command doing it. Those five are applied by
-# running bootstrap/deploy.sh on the host, which is the only manual step left.
+# Note: the sync resource itself is NOT declared here. A sync can't update
+# itself — it holds a lock on its own resource while running, so it fails with
+# "ResourceSync busy" and the whole run aborts. It is created once in the UI:
 #
-# Applications live in apps.toml. The split is by lifecycle, not by size —
-# things in here change when the platform changes; things in apps.toml change
-# when an app ships.
-#
-# See ../../README.md for how this file gets applied and how to add a service.
-
-# ---------------------------------------------------------------------------
-# THE SYNC ITSELF IS NOT DECLARED HERE, AND MUST NOT BE.
-#
-# It used to be, and it broke the whole loop. A sync holds a lock on its own
-# resource while it runs, so applying a `[[resource_sync]] homelab` block from
-# inside that same run always fails:
-#
-#   ERROR: failed to update config on ResourceSync 'homelab' | ResourceSync busy
-#
-# That is not a race — it is structural, and it happens on every run where the
-# declared config differs from the database. The damage is not the error line:
-# a failed stage aborts the whole procedure (bin/core/src/helpers/procedure.rs
-# propagates it with `?`), so stage 2 never runs and NOTHING redeploys.
-#
-# The sync is therefore hand-created in the UI, once, and its settings live
-# there rather than in git. Recreate it with:
-#
-#   Name           homelab          (must match `params.sync` in the procedure)
-#   Git provider   github.com
-#   Repo           namanvashistha/homelab
-#   Branch         main
+#   Name           homelab
+#   Repo           namanvashistha/homelab   (github.com, branch main)
 #   Resource path  komodo/syncs
-#   Git account    (blank — public repo)
-#   Match tags     homelab          ← REQUIRED, see below
-#   Delete         ON               ← only safe together with match tags
-#   Managed        OFF. That would let the UI write back into these files;
-#                  git is the input, not the output.
-#   Include variables / user groups   OFF. Secrets stay in the database —
-#                  this repo is public.
-#
-# WHY match_tags IS LOAD-BEARING
-# Delete mode walks EVERY resource type and removes anything IN SCOPE that is
-# not declared here (bin/core/src/sync/execute.rs). Unscoped, that includes the
-# sync itself — which is not declared, for the reason above — so the first run
-# would delete the thing running it, and the whole loop with it.
-#
-# `match_tags = ["homelab"]` narrows scope on BOTH sides of the diff
-# (include_resource_by_tags, bin/core/src/sync/mod.rs): only resources carrying
-# the tag are considered, in the database and in these files. Everything
-# declared here is tagged `homelab`; the sync is deliberately not. So delete
-# means "remove homelab-tagged resources that left git" and can never reach
-# the sync, or anything else created outside this repo.
-#
-# The rule that follows: A NEW RESOURCE MUST CARRY THE `homelab` TAG, or the
-# sync silently ignores it — it will never be created, and it will never be
-# deleted. Untagged is out of scope, not managed.
-#
-# Everything else on the instance IS declared below and in apps.toml, including
-# the two Procedures Core creates on first boot.
-# ---------------------------------------------------------------------------
+#   Delete         OFF
+#   Managed        OFF
 
-# ---------------------------------------------------------------------------
-# The server every stack is deployed to.
-#
-# Core also creates this on startup from KOMODO_FIRST_SERVER_NAME, but only
-# when NO server exists at all (bin/core/src/startup.rs early-returns the moment
-# it finds one). That makes the env var a bootstrap convenience and this block
-# the source of truth: delete the server in the UI and nothing brings it back
-# until Core restarts — unless it is declared here.
-#
-# The name must match KOMODO_FIRST_SERVER_NAME and PERIPHERY_CONNECT_AS, both
-# fed by ${KOMODO_SERVER_NAME:-Local} in bootstrap/docker-compose.yml.
-#
-# No `address`: empty means Periphery dials Core (ws://komodo-core:9120),
-# rather than Core reaching out to an agent.
-# ---------------------------------------------------------------------------
-
+# The server everything deploys to. Core also creates this on first boot from
+# KOMODO_FIRST_SERVER_NAME, but only when no server exists at all — declaring
+# it here means it comes back if it's ever deleted.
+# No address: empty means Periphery dials Core, which is how they're wired.
 [[server]]
 name = "Local"
-description = "The box. Periphery runs beside Core in the bootstrap stack."
-tags = ["homelab"]
+description = "The box."
 
 [server.config]
 enabled = true
-send_unreachable_alerts = true
-send_cpu_alerts = true
-send_mem_alerts = true
-send_disk_alerts = true
 
-# ---------------------------------------------------------------------------
-# Redeploy on commit, by polling.
+# Every 10 minutes:
+#   1. apply this repo's TOML  (a sync only goes Pending on its own; RunSync
+#      is the Execute button, on a schedule)
+#   2. redeploy any stack whose own repo has new commits
+# Stages run in order, so a stack added to apps.toml is created before step 2
+# tries to deploy it.
 #
-# Komodo's native path is a GitHub webhook, which here has to cross Cloudflare
-# Access — GitHub cannot log in, so it would need a Bypass policy on
-# /listener/*. This procedure avoids that entirely: no webhook, no Access
-# exception, no inbound anything.
-#
-# `DeployStackIfChanged` fetches each repo's latest commit and compares it with
-# what is deployed, redeploying only on a real difference — so a tighter
-# schedule costs a git fetch per stack, not a rebuild. The batch form takes a
-# pattern, so stacks added later are covered without touching this.
-#
-# Cron is SIX fields: (second, minute, hour, day, month, day-of-week).
-# `0 */10 * * * *` is every ten minutes, not every ten seconds. Drop to
-# `0 */2 * * * *` if the wait after a push starts to annoy.
-# ---------------------------------------------------------------------------
-
+# Cron is SIX fields: second minute hour day month day-of-week.
 [[procedure]]
 name = "poll-git-redeploy"
-description = "Every 10 min: apply this repo's declarations, then redeploy any stack whose repo has new commits."
-tags = ["homelab"]
+description = "Every 10 min: apply the TOML, then redeploy stacks with new commits."
 
 [procedure.config]
 schedule_format = "Cron"
 schedule = "0 */10 * * * *"
 schedule_enabled = true
 schedule_timezone = "Asia/Kolkata"
-# Off on purpose: this runs 144 times a day and an alert per run is noise.
-# Failures still alert via failure_alert.
 schedule_alert = false
 failure_alert = true
 
-# Stage 1: apply this repo's declarations.
-#
-# A sync does NOT self-apply. Left alone it notices new commits, computes a
-# diff, parks in `Pending` and waits for someone to press Execute — which means
-# a stack added to apps.toml would sit unapplied until somebody opened the UI.
-# `RunSync` is that Execute, on a schedule.
-#
-# Stages run in order, so declarations land before the deploy stage below:
-# a stack added in the same commit exists by the time anything tries to
-# redeploy it.
-#
-# Note it may update this very procedure mid-run. Harmless — the config was
-# read when the run started; edits take effect on the next firing.
 [[procedure.config.stage]]
 name = "Apply declarations"
 enabled = true
@@ -148,7 +53,6 @@ enabled = true
 type = "RunSync"
 params.sync = "homelab"
 
-# Stage 2: redeploy anything whose own repo moved.
 [[procedure.config.stage]]
 name = "Redeploy changed stacks"
 enabled = true
@@ -158,83 +62,4 @@ enabled = true
 
 [procedure.config.stage.execution.execution]
 type = "BatchDeployStackIfChanged"
-# Every stack. Each one is sourced from its own app repo, so this fires only
-# when that app actually ships — a commit to THIS repo changes no stack's hash
-# and redeploys nothing. Declaration changes are stage 1's job.
 params.pattern = "*"
-
-# ---------------------------------------------------------------------------
-# The two Procedures Core creates on first boot.
-#
-# Declared here for one specific reason: `delete = true` on the sync. Delete
-# mode walks every resource type and removes anything in scope that is not
-# declared, so until these existed in git they were the reason delete had to
-# stay off — the first run would have taken the database backup with it.
-#
-# Both blocks are copied from upstream's own documentation (setup/backup.md
-# and deploy/auto-update.md), including the `system` tag, so they match what a
-# fresh install creates. The `homelab` tag is what brings them into this sync's
-# scope; see the note on match_tags at the top of this file.
-#
-# They are ordinary Procedures — upstream's words: "There is nothing special
-# about this Procedure, it's just created by default for guidance /
-# convenience." Change the schedules here and the sync applies them.
-# ---------------------------------------------------------------------------
-
-[[procedure]]
-name = "Backup Core Database"
-description = "Triggers the Core database backup at the scheduled time."
-tags = ["homelab", "system"]
-
-[procedure.config]
-schedule_format = "English"
-schedule = "Every day at 01:00"
-schedule_enabled = true
-schedule_timezone = "Asia/Kolkata"
-# Daily and silent when it works; a failed backup is worth waking up for.
-schedule_alert = false
-failure_alert = true
-
-[[procedure.config.stage]]
-name = "Stage 1"
-enabled = true
-
-[[procedure.config.stage.execution]]
-enabled = true
-
-[procedure.config.stage.execution.execution]
-type = "BackupCoreDatabase"
-params = {}
-
-# Dumps land in /backups, which bootstrap/docker-compose.yml binds to
-# /etc/komodo/backups on the host — outside any volume, so a `docker volume
-# prune` cannot take them. 14 kept by default.
-
-[[procedure]]
-name = "Global Auto Update"
-description = "Pulls and auto updates Stacks and Deployments using 'poll_for_updates' or 'auto_update'."
-tags = ["homelab", "system"]
-
-[procedure.config]
-schedule_format = "English"
-schedule = "Every day at 03:00"
-schedule_enabled = true
-schedule_timezone = "Asia/Kolkata"
-schedule_alert = false
-failure_alert = true
-
-[[procedure.config.stage]]
-name = "Stage 1"
-enabled = true
-
-[[procedure.config.stage.execution]]
-enabled = true
-
-[procedure.config.stage.execution.execution]
-type = "GlobalAutoUpdate"
-params = {}
-
-# Only touches resources that opted in per-stack. Right now that is nothing:
-# every app stack sets poll_for_updates = false because they build from source,
-# and self-update pins nothing worth chasing. It runs, finds no candidates, and
-# exits — kept so the behaviour is declared rather than implicit.
