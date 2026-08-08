@@ -22,16 +22,20 @@ jobs:
       # and interpolates, not that the secrets are correct.
       - name: Validate compose files
         run: |
-          # nullglob so an empty (or absent) stacks/ doesn't leave the literal
-          # pattern in the loop and fail on a file called "stacks/*.yml".
+          # nullglob so an absent stacks/ doesn't leave the literal pattern in
+          # the loop and fail on a file called "stacks/*/compose.yaml".
           shopt -s nullglob
-          for f in bootstrap/docker-compose.yml stacks/*.yml; do
+          for f in bootstrap/docker-compose.yml stacks/*/compose.yaml; do
             echo "--- $f"
+            # Dummy values for every `:?` required var. This proves the file
+            # parses and interpolates, not that the real secrets are correct.
             CF_TUNNEL_TOKEN=x \
             KOMODO_DB_PASSWORD=x \
             KOMODO_ADMIN_PASSWORD=x \
             KOMODO_JWT_SECRET=x \
             KOMODO_WEBHOOK_SECRET=x \
+            DOCMOST_APP_SECRET=x \
+            DOCMOST_DB_PASSWORD=x \
             docker compose -f "$f" config -q
           done
 
