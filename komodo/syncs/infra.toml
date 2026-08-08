@@ -79,24 +79,25 @@ send_disk_alerts = true
 # exception, no inbound anything.
 #
 # `DeployStackIfChanged` fetches each repo's latest commit and compares it with
-# what is deployed, redeploying only on a real difference, so every two minutes
-# is cheap. The batch form takes a pattern, so stacks added later are covered
-# without touching this.
+# what is deployed, redeploying only on a real difference — so a tighter
+# schedule costs a git fetch per stack, not a rebuild. The batch form takes a
+# pattern, so stacks added later are covered without touching this.
 #
 # Cron is SIX fields: (second, minute, hour, day, month, day-of-week).
-# `0 */2 * * * *` is every two minutes, not every two seconds.
+# `0 */10 * * * *` is every ten minutes, not every ten seconds. Drop to
+# `0 */2 * * * *` if the wait after a push starts to annoy.
 # ---------------------------------------------------------------------------
 
 [[procedure]]
 name = "poll-git-redeploy"
-description = "Every 2 min: redeploy any stack whose repo has new commits."
+description = "Every 10 min: redeploy any stack whose repo has new commits."
 
 [procedure.config]
 schedule_format = "Cron"
-schedule = "0 */2 * * * *"
+schedule = "0 */10 * * * *"
 schedule_enabled = true
 schedule_timezone = "Asia/Kolkata"
-# Off on purpose: this runs 720 times a day and an alert per run is noise.
+# Off on purpose: this runs 144 times a day and an alert per run is noise.
 # Failures still alert via failure_alert.
 schedule_alert = false
 failure_alert = true
@@ -110,44 +111,7 @@ enabled = true
 
 [procedure.config.stage.execution.execution]
 type = "BatchDeployStackIfChanged"
-# Every stack. Note this includes stacks sourced from THIS repo, so any commit
-# here — even a README edit — redeploys them. Narrow to a comma-separated list
-# if that churn ever matters.
+# Every stack. Worth remembering if a stack is ever sourced from THIS repo:
+# any commit here, even a README edit, would then redeploy it. Narrow to a
+# comma-separated list of names if that churn ever matters.
 params.pattern = "*"
-
-# ---------------------------------------------------------------------------
-# Infrastructure stacks.
-# ---------------------------------------------------------------------------
-
-[[stack]]
-name = "monitoring"
-description = "Uptime Kuma + AutoKuma + Beszel."
-tags = ["infra"]
-
-[stack.config]
-server = "Local"
-git_provider = "github.com"
-repo = "namanvashistha/homelab"
-branch = "main"
-# `cd stacks` before running compose, so relative paths inside the file anchor
-# there rather than at the repo root.
-run_directory = "stacks"
-file_paths = ["monitoring.yml"]
-# All registry images, no local builds — so pulling is both safe and wanted.
-auto_pull = true
-run_build = false
-# Surfaces available image updates in the UI without applying them. Left to a
-# deliberate click: these are `:latest`-style tags and an unattended bump of
-# Uptime Kuma is not something to wake up to.
-poll_for_updates = true
-auto_update = false
-webhook_enabled = true
-# Written to a .env beside the compose file at deploy time. [[NAME]] resolves
-# against Komodo's Variables & Secrets store — create these four under
-# Settings -> Variables. Values never appear in this repo.
-environment = """
-AUTOKUMA_USERNAME=[[AUTOKUMA_USERNAME]]
-AUTOKUMA_PASSWORD=[[AUTOKUMA_PASSWORD]]
-BESZEL_TOKEN=[[BESZEL_TOKEN]]
-BESZEL_KEY=[[BESZEL_KEY]]
-"""

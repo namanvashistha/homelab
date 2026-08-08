@@ -23,8 +23,10 @@ bootstrap/          Layer 1 — run by hand on the host, rarely
   docker-compose.yml  caddy, cloudflared, komodo-mongo, komodo-core, komodo-periphery
   .env.example        the only secrets file on the box (5 values)
 
-stacks/             Layer 2 — compose files Komodo deploys from this repo
-  monitoring.yml      uptime-kuma, autokuma, beszel
+stacks/             Layer 2 — compose files Komodo deploys from this repo.
+                    Empty for now: every service currently has its own repo.
+                    Create it when something needs a compose file with no
+                    home of its own.
 
 komodo/syncs/       Layer 2 — what Komodo should be running
   infra.toml          the sync itself, the server, the redeploy poller, infra stacks
@@ -97,9 +99,9 @@ auto_pull = false     # MUST be false when run_build is true
 poll_for_updates = false
 ```
 
-Push. The poller picks it up within two minutes. The app's own compose carries
-its `caddy:` label and joins the external `caddy` network, so routing and
-uptime monitoring configure themselves.
+Push. The poller picks it up within ten minutes. The app's own compose carries
+its `caddy:` label and joins the external `caddy` network, so routing
+configures itself — nothing to add here or in Cloudflare.
 
 **Something with no repo of its own** — put the compose in `stacks/`, then
 declare it in `infra.toml` with `run_directory = "stacks"` and
@@ -115,8 +117,8 @@ Mongo. Their security is the database's security.
 
 - **`auto_pull = false` whenever `run_build = true`.** `compose pull` fails
   outright on a locally built image. CI checks this.
-- **One compose file owns one concern.** Splitting `monitoring` from the apps is
-  what lets Komodo redeploy one without touching the other.
+- **One compose file owns one concern.** One stack per thing that can fail on
+  its own — that is what lets Komodo redeploy one without touching the rest.
 - **Named volumes, not bind mounts,** in `stacks/*.yml`. Komodo clones this repo
   to `/etc/komodo/stacks/<name>/`, so a relative bind mount silently anchors
   wherever the clone lands. Volumes keep a stack relocatable.
