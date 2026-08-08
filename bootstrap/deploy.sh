@@ -12,13 +12,14 @@
 # Run on a fresh box:
 #   curl -fsSL https://raw.githubusercontent.com/namanvashistha/homelab/main/bootstrap/deploy.sh | sudo bash
 #
-# After that first run you should not need this again: the `self-update` stack
-# (../stacks/self-update.yml) does the same work from inside Komodo whenever
-# this repo changes. Keep it for two cases — a fresh box, and rescuing a broken
-# bootstrap stack, which self-update cannot do because Komodo is part of what
-# broke.
+# Re-run it whenever bootstrap/docker-compose.yml changes. That is the one
+# thing Komodo does not apply for you, and it cannot: it would have to recreate
+# the containers it runs inside, and Periphery would kill its own compose
+# command doing it. Everything else on this box — stacks, procedures, the
+# server — is reconciled from komodo/syncs every ten minutes.
 #
-# Idempotent either way: `compose up -d` on an unchanged stack is a no-op.
+# Idempotent: `compose up -d` on an unchanged stack is a no-op, so running this
+# when nothing changed costs nothing.
 
 set -euo pipefail
 

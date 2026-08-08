@@ -1,5 +1,10 @@
-# Infrastructure resources: the sync itself, the server, the redeploy poller,
-# and the stacks that are infrastructure rather than applications.
+# Infrastructure resources: the server, the redeploy poller, and the two
+# Procedures Core creates on first boot.
+#
+# The bootstrap stack (caddy, cloudflared, komodo) is NOT here and cannot be:
+# Komodo would have to recreate the containers it runs inside, and Periphery
+# would kill its own compose command doing it. Those five are applied by
+# running bootstrap/deploy.sh on the host, which is the only manual step left.
 #
 # Applications live in apps.toml. The split is by lifecycle, not by size —
 # things in here change when the platform changes; things in apps.toml change
@@ -153,63 +158,10 @@ enabled = true
 
 [procedure.config.stage.execution.execution]
 type = "BatchDeployStackIfChanged"
-# Every stack — and `self-update` below is deliberately one of them. It is
-# sourced from THIS repo, so any commit here changes its hash and redeploys it,
-# which is exactly what applies a bootstrap change. A README-only commit runs it
-# too; that costs a git pull and a no-op `compose up`.
+# Every stack. Each one is sourced from its own app repo, so this fires only
+# when that app actually ships — a commit to THIS repo changes no stack's hash
+# and redeploys nothing. Declaration changes are stage 1's job.
 params.pattern = "*"
-
-# ---------------------------------------------------------------------------
-# The stack that updates the bootstrap stack.
-#
-# This is what closes the last manual loop. Komodo cannot deploy the containers
-# it runs inside — Periphery would kill its own compose command — so it deploys
-# this instead, and this does the work from outside the blast radius. See
-# ../../stacks/self-update.yml for the full mechanism.
-#
-# Because it is sourced from this repo, the poller above redeploys it whenever
-# anything here changes, meaning bootstrap edits land within ten minutes with
-# no systemd timer, no cron, and nothing outside Komodo.
-#
-# To force an apply without a commit: Stacks -> self-update -> Deploy.
-# ---------------------------------------------------------------------------
-
-[[stack]]
-name = "self-update"
-description = "One-shot that pulls this repo and applies the bootstrap stack."
-tags = ["homelab", "infra"]
-
-[stack.config]
-server = "Local"
-git_provider = "github.com"
-repo = "namanvashistha/homelab"
-branch = "main"
-run_directory = "stacks"
-file_paths = ["self-update.yml"]
-# docker:cli is a registry image, so pulling is right and there is nothing to
-# build. Update polling is off: this image is a stable tool, not a service, and
-# an unattended bump of the thing that rewrites the bootstrap stack is the last
-# place to want surprises.
-auto_pull = true
-run_build = false
-poll_for_updates = false
-auto_update = false
-webhook_enabled = true
-# This stack is SUPPOSED to end up with nothing running. Without this, Komodo
-# reports it STOPPED in red the moment the one-shot exits 0 — upstream's own
-# words for the flag: "an init service might be exited, but the stack should be
-# healthy. This init service should be in `ignore_services`."
-ignore_services = ["bootstrap-apply"]
-# And no StackStateChange alerts: a one-shot finishing its work is not an
-# incident, and this one finishes on every deploy. Real failures surface in the
-# container log and in the procedure's own failure_alert.
-send_alerts = false
-# Where the bootstrap checkout lives on the host — the one path this design
-# assumes. Matches BASE_DIR in bootstrap/deploy.sh, which defaults to
-# $HOME/homelab (so /root/homelab when deploy.sh runs as root).
-environment = """
-HOMELAB_DIR=/root/homelab
-"""
 
 # ---------------------------------------------------------------------------
 # The two Procedures Core creates on first boot.

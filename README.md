@@ -18,16 +18,13 @@ one.
 ## Layout
 
 ```
-bootstrap/          Layer 1 — run once on a fresh box, then self-applying
+bootstrap/          Layer 1 — run on the host, by hand, rarely
   deploy.sh           installs docker, creates the caddy network, runs the below
   docker-compose.yml  caddy, cloudflared, komodo-mongo, komodo-core, komodo-periphery
   .env.example        the only secrets file on the box (5 values)
 
-stacks/             Layer 2 — compose files Komodo deploys from this repo
-  self-update.yml     one-shot that applies bootstrap/ from inside Komodo
-
-komodo/syncs/       Layer 2 — what Komodo should be running
-  infra.toml          the server, the redeploy poller, the self-update stack
+komodo/syncs/       Layer 2 — what Komodo should be running, reconciled from git
+  infra.toml          the server, the redeploy poller, the two boot procedures
   apps.toml           one block per application, each from its own repo
 
 jellyfin/           Kubernetes manifest from an earlier experiment.
@@ -36,24 +33,29 @@ jellyfin/           Kubernetes manifest from an earlier experiment.
 
 ### Layer 1: bootstrap
 
-Five services, listed above, and nothing else qualifies. `deploy.sh` brings them
-up on a fresh box — the one manual step in the whole system.
+Five services, listed above, and nothing else qualifies.
 
-After that they update themselves, and the trick is worth understanding. Komodo
-cannot deploy these directly: `komodo-periphery` is the process that runs
-`docker compose up`, so a run that recreates Periphery kills the command
-mid-flight. But Komodo *can* deploy a different stack that does it. That is
-`stacks/self-update.yml` — a `docker:cli` one-shot in its own compose project,
-which pulls this repo and applies `bootstrap/docker-compose.yml` from outside
-the blast radius. It replaces Core and Periphery without being replaced itself.
+These are the one thing Komodo does not apply for you, and it is not an
+oversight: `komodo-periphery` is the process that runs `docker compose up`, so
+a run that recreates Periphery kills the command mid-flight. Something outside
+Komodo has to own them.
 
-Since it is sourced from this repo, the poller below redeploys it on any commit
-here, so bootstrap changes land within ten minutes. No systemd, no cron,
-nothing outside Komodo.
+That something is you, occasionally:
 
-The catch, stated plainly: if a bad commit breaks the bootstrap stack, nothing
-recovers it automatically — Komodo is part of what broke. That is what
-`deploy.sh` is still for.
+```bash
+ssh the-box
+bash ~/homelab/bootstrap/deploy.sh    # pull + compose up -d, idempotent
+```
+
+Editing `bootstrap/docker-compose.yml` and pushing changes nothing until that
+runs. In practice it is a few times a year, mostly Komodo version bumps — and
+those are exactly the changes worth watching rather than waking up to.
+
+There *is* a way to automate it (a one-shot in its own compose project, which
+recreates Core and Periphery from outside the blast radius). It was built here
+and then removed: it worked, but its exit code is invisible to Komodo, so a
+failed apply looks identical to a successful one. Not a good trade for five
+containers that change twice a year. `git log` has it if you want it back.
 
 ### Layer 2: Komodo
 
@@ -103,6 +105,8 @@ curl -fsSL https://raw.githubusercontent.com/namanvashistha/homelab/main/bootstr
 #      repo          namanvashistha/homelab
 #      branch        main
 #      resource path komodo/syncs
+#      match tags    homelab      <- set this BEFORE enabling delete
+#      delete        on
 #    Save, then EXECUTE. Save only stages the diff; Execute applies it.
 ```
 
@@ -154,10 +158,10 @@ Mongo. Their security is the database's security.
   wherever the clone lands. Absolute host paths are fine and sometimes required
   — `self-update.yml` mounts `/root/homelab` and the docker socket on purpose,
   because the daemon, not the container, resolves them.
-- **`delete = false` on the sync, for now.** Komodo's delete mode walks *every*
-  resource type and removes anything not declared in these files — including the
-  Procedures Core creates on first boot. Turn it on only once everything on the
-  instance is declared here.
+- **Tag every declared resource `homelab`.** The sync runs `delete = true`
+  scoped by `match_tags = ["homelab"]`. Untagged means out of scope: never
+  created, never deleted, silently ignored. Tagged and missing from git means
+  deleted. CI enforces the tag.
 - **Comments explain *why*, not *what*.** The compose files say what; the
   reasoning behind a weird pinned tag or a missing `ports:` is the part that is
   expensive to reconstruct.
