@@ -1,0 +1,158 @@
+# Monitoring: uptime checks + host/container stats.
+#
+# Deployed by Komodo (declared in ../komodo/syncs/infra.toml), not by
+# bootstrap/deploy.sh. Komodo clones this repo to /etc/komodo/stacks/monitoring
+# and runs this file from the `stacks` directory, so relative paths anchor
+# there — which is why nothing below uses a bind mount. Named volumes only,
+# keeping the stack relocatable.
+#
+# Credentials come from Komodo's Variables & Secrets store, written into a .env
+# beside this file at deploy time. Nothing secret lives in this repo.
+#
+# Overlap with Komodo itself is real but not total: Komodo watches containers
+# from the inside, Uptime Kuma checks whether the site answers through
+# Cloudflare -> tunnel -> Caddy. A container can be healthy while the public
+# path is broken.
+
+services:
+  # ---- Uptime Kuma: does the public URL actually answer? ----
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptime-kuma-data:/app/data
+    environment:
+      - TZ=${TZ:-Asia/Kolkata}
+    expose:
+      - "3001"
+    networks: [caddy]
+    labels:
+      # http:// scheme required — Caddy runs auto_https=off behind Cloudflare.
+      # `status.` belongs to Beszel, so Kuma lives on `uptime.`
+      caddy: http://uptime.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 3001}}"
+
+  # ---- AutoKuma: creates Kuma monitors from docker labels ----
+  # Nothing here lists endpoints. The `!caddy` snippet below turns every
+  # container that already carries a `caddy:` label into a monitor — created as
+  # containers appear, deleted as they go away. Deploy anything anywhere on this
+  # box with a caddy label and it is on the status page within seconds.
+  autokuma:
+    # Two things make this exact tag necessary; `:latest` fails on both.
+    #  1. `:latest` is v2.0.0, which predates the structured snippet env vars
+    #     (SNIPPETS__0__KEY / __VALUE). Without them it rejects the config:
+    #       Invalid config: invalid type: map, expected a string for key `snippets.0`
+    #  2. AutoKuma 2.1 targets Uptime Kuma v2 by default. This stack runs Kuma
+    #     v1, so the `uptime-kuma-v1-` build is required.
+    # Bump to the stable 2.1.0 tag once it exists.
+    image: ghcr.io/bigboot/autokuma:uptime-kuma-v1-2.1.0-rc.2
+    container_name: autokuma
+    restart: unless-stopped
+    depends_on:
+      - uptime-kuma
+    environment:
+      - AUTOKUMA__KUMA__URL=http://uptime-kuma:3001
+      # Kuma has no API tokens — AutoKuma signs in as a real user. Create the
+      # account on first boot at uptime.namanvashistha.com, then put it in
+      # Komodo's Secrets as AUTOKUMA_USERNAME / AUTOKUMA_PASSWORD.
+      # Until then AutoKuma restart-loops on failed login, which is harmless.
+      - AUTOKUMA__KUMA__USERNAME=${AUTOKUMA_USERNAME:-}
+      - AUTOKUMA__KUMA__PASSWORD=${AUTOKUMA_PASSWORD:-}
+      # A `!snippet` fires on an EXISTING label key rather than a kuma.* one,
+      # receiving that label's value as args[0] — here `http://home.example.com`
+      # from caddy-docker-proxy. That is what makes this zero-touch: the label
+      # Caddy already needs for routing doubles as the monitor definition.
+      - AUTOKUMA__SNIPPETS__0__KEY=!caddy
+      - |
+        AUTOKUMA__SNIPPETS__0__VALUE=
+        {% set host = args[0] | replace(from="https://", to="") | replace(from="http://", to="") | trim %}
+        {% if host %}
+        {{ container_name }}_http.http.name: {{ container_name }}
+        {{ container_name }}_http.http.url: https://{{ host }}
+        {{ container_name }}_http.http.interval: 120
+        {% endif %}
+      - TZ=${TZ:-Asia/Kolkata}
+    volumes:
+      # read-only: AutoKuma only enumerates containers and their labels
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - autokuma-data:/data
+    networks: [caddy]
+
+  # ---- Beszel: host + container stats ----
+  # Hub = web UI + embedded DB. The agent reports over a shared unix socket in
+  # a named volume, so their traffic never crosses a network.
+  #
+  # Genuinely overlaps Komodo's own server stats. Kept for the longer history —
+  # Komodo keeps 14 days by default. Delete this and beszel-agent if you decide
+  # one stats view is enough.
+  beszel:
+    image: henrygd/beszel:latest
+    container_name: beszel
+    restart: unless-stopped
+    environment:
+      # The hub builds absolute links (and the agent install snippets it shows
+      # in the UI) from this.
+      - APP_URL=https://status.namanvashistha.com
+      - TZ=${TZ:-Asia/Kolkata}
+    volumes:
+      - beszel-data:/beszel_data
+      - beszel-socket:/beszel_socket
+    # Loopback-only publish so beszel-agent (host networking, below) can reach
+    # HUB_URL to self-register. That is its only purpose — Caddy reaches the hub
+    # over the container network using the port in the label.
+    ports:
+      - "127.0.0.1:8090:8090"
+    expose:
+      - "8090"
+    networks: [caddy]
+    labels:
+      caddy: http://status.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 8090}}"
+    healthcheck:
+      # The hub is a PocketBase app, so /api/health is real and needs no auth.
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8090/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  beszel-agent:
+    image: henrygd/beszel-agent:latest
+    container_name: beszel-agent
+    restart: unless-stopped
+    # host networking so the agent measures the HOST's cpu/net/disk rather than
+    # a container namespace. It joins no docker network — the hub talks to it
+    # through the shared socket volume instead.
+    network_mode: host
+    volumes:
+      - beszel-agent-data:/var/lib/beszel-agent
+      - beszel-socket:/beszel_socket
+      # read-only docker socket -> per-container stats in the hub UI
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      # Add this system in the hub UI with Host/IP = /beszel_socket/beszel.sock
+      # (the port field is ignored).
+      - LISTEN=/beszel_socket/beszel.sock
+      - HUB_URL=http://localhost:8090
+      # Both come from the hub UI after its first boot:
+      #   Settings -> Tokens & Fingerprints -> universal token  (BESZEL_TOKEN)
+      #   "Add System" dialog -> the public key it shows        (BESZEL_KEY)
+      # Put them in Komodo's Secrets and redeploy this stack.
+      - TOKEN=${BESZEL_TOKEN:-}
+      - KEY=${BESZEL_KEY:-}
+      - TZ=${TZ:-Asia/Kolkata}
+
+networks:
+  # Created by bootstrap/deploy.sh, shared by every stack on the box.
+  caddy:
+    external: true
+
+volumes:
+  uptime-kuma-data:
+  autokuma-data:
+  beszel-data:
+  beszel-agent-data:
+  # The hub <-> agent unix socket. A volume rather than a bind mount so this
+  # stack has no dependency on where Komodo happened to clone the repo.
+  beszel-socket:

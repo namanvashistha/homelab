@@ -1,0 +1,153 @@
+# Infrastructure resources: the sync itself, the server, the redeploy poller,
+# and the stacks that are infrastructure rather than applications.
+#
+# Applications live in apps.toml. The split is by lifecycle, not by size —
+# things in here change when the platform changes; things in apps.toml change
+# when an app ships.
+#
+# See ../../README.md for how this file gets applied and how to add a service.
+
+# ---------------------------------------------------------------------------
+# The sync resource, declaring itself.
+#
+# One ResourceSync must be created by hand in the UI the first time (Komodo
+# never discovers sync files on its own). Name it exactly `homelab` and point
+# it at this directory; from then on it manages itself through git.
+# ---------------------------------------------------------------------------
+
+[[resource_sync]]
+name = "homelab"
+description = "Applies komodo/syncs from the homelab repo."
+
+[resource_sync.config]
+git_provider = "github.com"
+repo = "namanvashistha/homelab"
+branch = "main"
+# A directory: new .toml files dropped in here are picked up without editing
+# this resource.
+resource_path = ["komodo/syncs"]
+# OFF, deliberately. Komodo's delete mode is not scoped to the resource types
+# these files mention — it walks EVERY type and removes anything not declared
+# (bin/core/src/sync/execute.rs). Enabling it today would destroy the two
+# Procedures Core creates on first boot ("Backup Core Database", "Global Auto
+# Update"). Turn it on only once every resource on the instance is declared
+# here; the payoff is that deleting a block then really does tear the service
+# down, with no silent drift.
+delete = false
+# `managed` would let Komodo WRITE resources back into these files from the UI.
+# Off: git is the input, not the output.
+managed = false
+include_resources = true
+# Variables and secrets stay in the database. This repo is public.
+include_variables = false
+include_user_groups = false
+webhook_enabled = true
+
+# ---------------------------------------------------------------------------
+# The server every stack is deployed to.
+#
+# Core also creates this on startup from KOMODO_FIRST_SERVER_NAME, but only
+# when NO server exists at all (bin/core/src/startup.rs early-returns the moment
+# it finds one). That makes the env var a bootstrap convenience and this block
+# the source of truth: delete the server in the UI and nothing brings it back
+# until Core restarts — unless it is declared here.
+#
+# The name must match KOMODO_FIRST_SERVER_NAME and PERIPHERY_CONNECT_AS, both
+# fed by ${KOMODO_SERVER_NAME:-Local} in bootstrap/docker-compose.yml.
+#
+# No `address`: empty means Periphery dials Core (ws://komodo-core:9120),
+# rather than Core reaching out to an agent.
+# ---------------------------------------------------------------------------
+
+[[server]]
+name = "Local"
+description = "The box. Periphery runs beside Core in the bootstrap stack."
+
+[server.config]
+enabled = true
+send_unreachable_alerts = true
+send_cpu_alerts = true
+send_mem_alerts = true
+send_disk_alerts = true
+
+# ---------------------------------------------------------------------------
+# Redeploy on commit, by polling.
+#
+# Komodo's native path is a GitHub webhook, which here has to cross Cloudflare
+# Access — GitHub cannot log in, so it would need a Bypass policy on
+# /listener/*. This procedure avoids that entirely: no webhook, no Access
+# exception, no inbound anything.
+#
+# `DeployStackIfChanged` fetches each repo's latest commit and compares it with
+# what is deployed, redeploying only on a real difference, so every two minutes
+# is cheap. The batch form takes a pattern, so stacks added later are covered
+# without touching this.
+#
+# Cron is SIX fields: (second, minute, hour, day, month, day-of-week).
+# `0 */2 * * * *` is every two minutes, not every two seconds.
+# ---------------------------------------------------------------------------
+
+[[procedure]]
+name = "poll-git-redeploy"
+description = "Every 2 min: redeploy any stack whose repo has new commits."
+
+[procedure.config]
+schedule_format = "Cron"
+schedule = "0 */2 * * * *"
+schedule_enabled = true
+schedule_timezone = "Asia/Kolkata"
+# Off on purpose: this runs 720 times a day and an alert per run is noise.
+# Failures still alert via failure_alert.
+schedule_alert = false
+failure_alert = true
+
+[[procedure.config.stage]]
+name = "Redeploy changed stacks"
+enabled = true
+
+[[procedure.config.stage.execution]]
+enabled = true
+
+[procedure.config.stage.execution.execution]
+type = "BatchDeployStackIfChanged"
+# Every stack. Note this includes stacks sourced from THIS repo, so any commit
+# here — even a README edit — redeploys them. Narrow to a comma-separated list
+# if that churn ever matters.
+params.pattern = "*"
+
+# ---------------------------------------------------------------------------
+# Infrastructure stacks.
+# ---------------------------------------------------------------------------
+
+[[stack]]
+name = "monitoring"
+description = "Uptime Kuma + AutoKuma + Beszel."
+tags = ["infra"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/homelab"
+branch = "main"
+# `cd stacks` before running compose, so relative paths inside the file anchor
+# there rather than at the repo root.
+run_directory = "stacks"
+file_paths = ["monitoring.yml"]
+# All registry images, no local builds — so pulling is both safe and wanted.
+auto_pull = true
+run_build = false
+# Surfaces available image updates in the UI without applying them. Left to a
+# deliberate click: these are `:latest`-style tags and an unattended bump of
+# Uptime Kuma is not something to wake up to.
+poll_for_updates = true
+auto_update = false
+webhook_enabled = true
+# Written to a .env beside the compose file at deploy time. [[NAME]] resolves
+# against Komodo's Variables & Secrets store — create these four under
+# Settings -> Variables. Values never appear in this repo.
+environment = """
+AUTOKUMA_USERNAME=[[AUTOKUMA_USERNAME]]
+AUTOKUMA_PASSWORD=[[AUTOKUMA_PASSWORD]]
+BESZEL_TOKEN=[[BESZEL_TOKEN]]
+BESZEL_KEY=[[BESZEL_KEY]]
+"""

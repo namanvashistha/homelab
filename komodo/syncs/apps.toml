@@ -1,0 +1,121 @@
+# Applications. One block per app, each sourced from its own repo.
+#
+# Adding an app is: append a block, push, wait two minutes. Nothing else — no
+# host access, no deploy script edit, no Komodo UI click.
+#
+# Shared settings and why they are what they are:
+#
+#   run_build = true
+#     Every repo here builds its image from a Dockerfile in-tree. This is the
+#     equivalent of `compose up -d --build`. Without it Komodo deploys whatever
+#     stale image already exists on the box.
+#
+#   auto_pull = false
+#     Komodo's default is true and it is WRONG for these: `compose pull` fails
+#     outright on a service whose image is built locally rather than pulled.
+#
+#   poll_for_updates = false
+#     That flag polls a registry for new image versions. These images do not
+#     come from a registry.
+#
+# Redeploy on push is handled by the `poll-git-redeploy` procedure in
+# infra.toml — one poller covering every stack, same model as before.
+# `webhook_enabled` stays on because it costs nothing while unused and is half
+# the work already done if you later want instant deploys (see infra.toml).
+#
+# Routing: none of these need anything here. Each repo's compose carries its own
+# `caddy:` label and joins the external `caddy` network, and Caddy picks it up
+# live. Uptime Kuma monitors appear by themselves via AutoKuma.
+
+[[stack]]
+name = "chess"
+description = "Multiplayer chess — Go backend, Redis, Postgres."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/chess"
+branch = "main"
+# .yaml, not .yml — the only one spelled this way.
+file_paths = ["docker-compose.yaml"]
+run_build = true
+auto_pull = false
+poll_for_updates = false
+webhook_enabled = true
+
+[[stack]]
+name = "hyperbole"
+description = "C++ ttyd terminal app."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/hyperbole"
+branch = "master"
+file_paths = ["docker-compose.yml"]
+run_build = true
+auto_pull = false
+poll_for_updates = false
+webhook_enabled = true
+
+[[stack]]
+name = "foodly"
+description = "Foodly app + MariaDB."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/foodly"
+branch = "master"
+file_paths = ["docker-compose.yml"]
+run_build = true
+auto_pull = false
+poll_for_updates = false
+webhook_enabled = true
+
+[[stack]]
+name = "limedb"
+description = "Distributed KV store — 4 nodes + web UI."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/limedb"
+branch = "main"
+file_paths = ["docker-compose.yml"]
+run_build = true
+auto_pull = false
+poll_for_updates = false
+webhook_enabled = true
+
+# The bot is the reason the old deploy.sh could never be fully retired: its
+# compose declares `env_file: .env`, a file that is not in git, so a controller
+# that clones into its own directory had nothing to give it. Komodo solves that
+# directly — `environment` below is written to `.env` in the run directory
+# before compose runs, with values resolved from the Secrets store.
+[[stack]]
+name = "text-to-image-bot"
+description = "Telegram bot that renders text into cards."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/text-to-image-bot"
+branch = "main"
+file_paths = ["docker-compose.yml"]
+run_build = true
+auto_pull = false
+poll_for_updates = false
+webhook_enabled = true
+# Create these three in Komodo under Settings -> Variables, marking the token
+# as secret. The names match what bot.py reads.
+environment = """
+TELEGRAM_BOT_TOKEN=[[TELEGRAM_BOT_TOKEN]]
+IMAGE_USERNAME=[[IMAGE_USERNAME]]
+IMAGE_DISPLAY_NAME=[[IMAGE_DISPLAY_NAME]]
+"""

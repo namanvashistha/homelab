@@ -1,0 +1,74 @@
+# Catch broken config before Komodo tries to apply it.
+#
+# This exists because the failure mode is otherwise quiet: a typo in a sync
+# file leaves the sync sitting in Failed in a UI nobody is looking at, and a
+# broken compose file only surfaces when a deploy fails two minutes after a
+# push. Both are cheap to catch here.
+
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Dummy values for the `:?` required vars — this proves the file parses
+      # and interpolates, not that the secrets are correct.
+      - name: Validate compose files
+        run: |
+          for f in bootstrap/docker-compose.yml stacks/*.yml; do
+            echo "--- $f"
+            CF_TUNNEL_TOKEN=x \
+            KOMODO_DB_PASSWORD=x \
+            KOMODO_ADMIN_PASSWORD=x \
+            KOMODO_JWT_SECRET=x \
+            KOMODO_WEBHOOK_SECRET=x \
+            docker compose -f "$f" config -q
+          done
+
+  syncs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Komodo sync files
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys, tomllib
+
+          # Every stack must name a server and a repo, and must not carry the
+          # auto_pull + run_build combination that fails on locally built
+          # images. These two mistakes are the ones actually made so far.
+          errors = []
+          for path in sorted(pathlib.Path("komodo/syncs").glob("*.toml")):
+              try:
+                  doc = tomllib.loads(path.read_text())
+              except tomllib.TOMLDecodeError as exc:
+                  errors.append(f"{path}: {exc}")
+                  continue
+              for stack in doc.get("stack", []):
+                  name = stack.get("name", "<unnamed>")
+                  cfg = stack.get("config", {})
+                  if not cfg.get("server"):
+                      errors.append(f"{path}: stack '{name}' has no server")
+                  if not (cfg.get("repo") or cfg.get("files_on_host")):
+                      errors.append(f"{path}: stack '{name}' has no repo")
+                  if cfg.get("run_build") and cfg.get("auto_pull", True):
+                      errors.append(
+                          f"{path}: stack '{name}' sets run_build with "
+                          "auto_pull — compose pull fails on locally built images"
+                      )
+              print(f"{path}: ok "
+                    f"({len(doc.get('stack', []))} stacks, "
+                    f"{len(doc.get('procedure', []))} procedures)")
+
+          if errors:
+              print("\n".join(errors), file=sys.stderr)
+              sys.exit(1)
+          PY

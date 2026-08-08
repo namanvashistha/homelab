@@ -1,0 +1,5 @@
+# The only secrets file. Never commit it — bootstrap/.env.example documents
+# every key it should contain.
+bootstrap/.env
+
+.DS_Store
