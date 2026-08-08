@@ -23,9 +23,6 @@ bootstrap/          Layer 1 — run on the host, by hand, rarely
   docker-compose.yml  caddy, cloudflared, komodo-mongo, komodo-core, komodo-periphery
   .env.example        the only secrets file on the box (5 values)
 
-stacks/             Layer 2 — compose files that have no upstream repo
-  docmost/            wiki: app + postgres + redis
-
 komodo/syncs/       Layer 2 — what Komodo should be running, reconciled from git
   infra.toml          the server and the poller that keeps git and reality in sync
   apps.toml           one block per application, each from its own repo
@@ -140,9 +137,9 @@ its `caddy:` label and joins the external `caddy` network, so routing
 configures itself — nothing to add here or in Cloudflare.
 
 **Something with no repo of its own** — put the compose in `stacks/<name>/`
-and declare it with `repo = "namanvashistha/homelab"`,
-`run_directory = "stacks/<name>"`, `file_paths = ["compose.yaml"]`. See
-`docmost` for the pattern, including how secrets are referenced.
+(the directory does not exist yet) and declare it with
+`repo = "namanvashistha/homelab"`, `run_directory = "stacks/<name>"`,
+`file_paths = ["compose.yaml"]`.
 
 **Secrets** go in Komodo (Settings → Variables), never in this repo, and are
 referenced as `[[NAME]]` from a stack's `environment`. Komodo writes them to a

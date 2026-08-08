@@ -119,34 +119,3 @@ TELEGRAM_BOT_TOKEN=[[TELEGRAM_BOT_TOKEN]]
 IMAGE_USERNAME=[[IMAGE_USERNAME]]
 IMAGE_DISPLAY_NAME=[[IMAGE_DISPLAY_NAME]]
 """
-
-# The only stack whose compose lives in THIS repo — Docmost has no upstream
-# repo of its own to point at, just published images. Komodo clones homelab and
-# runs stacks/docmost/compose.yaml from there.
-#
-# Registry images, nothing built: auto_pull is right here, and it is the one
-# stack where poll_for_updates earns its keep (docmost:latest actually moves).
-# auto_update stays off — a wiki should not migrate its database schema while
-# you sleep.
-[[stack]]
-name = "docmost"
-description = "Self-hosted wiki at docs.namanvashistha.com — app, Postgres, Redis."
-tags = ["app"]
-
-[stack.config]
-server = "Local"
-git_provider = "github.com"
-repo = "namanvashistha/homelab"
-branch = "main"
-run_directory = "stacks/docmost"
-file_paths = ["compose.yaml"]
-run_build = false
-auto_pull = true
-poll_for_updates = true
-auto_update = false
-# Written to .env beside the compose file. [[NAME]] resolves against Komodo's
-# Variables & Secrets store — create both there, mark them secret.
-environment = """
-DOCMOST_APP_SECRET=[[DOCMOST_APP_SECRET]]
-DOCMOST_DB_PASSWORD=[[DOCMOST_DB_PASSWORD]]
-"""

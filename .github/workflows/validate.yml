@@ -34,8 +34,6 @@ jobs:
             KOMODO_ADMIN_PASSWORD=x \
             KOMODO_JWT_SECRET=x \
             KOMODO_WEBHOOK_SECRET=x \
-            DOCMOST_APP_SECRET=x \
-            DOCMOST_DB_PASSWORD=x \
             docker compose -f "$f" config -q
           done
 
