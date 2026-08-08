@@ -27,7 +27,7 @@ stacks/             Layer 2 — compose files Komodo deploys from this repo
   self-update.yml     one-shot that applies bootstrap/ from inside Komodo
 
 komodo/syncs/       Layer 2 — what Komodo should be running
-  infra.toml          the sync itself, the server, the redeploy poller, infra stacks
+  infra.toml          the server, the redeploy poller, the self-update stack
   apps.toml           one block per application, each from its own repo
 
 jellyfin/           Kubernetes manifest from an earlier experiment.
@@ -73,6 +73,13 @@ tries to deploy it. Both happen in one commit's worth of work: push, wait ten
 minutes.
 
 Adding a service does not touch layer 1. It never should.
+
+**The one thing that cannot be declared is the sync itself.** A sync holds a
+lock on its own resource while running, so a `[[resource_sync]]` block for
+`homelab` inside `komodo/syncs` fails every run with `ResourceSync busy` — and
+because a failed stage aborts the procedure, stage 2 then never runs and
+nothing redeploys at all. It is created by hand in the UI, once; its settings
+are written down at the top of `infra.toml` so it stays reproducible.
 
 ## First run on a fresh box
 

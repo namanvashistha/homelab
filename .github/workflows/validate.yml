@@ -45,9 +45,9 @@ jobs:
           python3 - <<'PY'
           import pathlib, sys, tomllib
 
-          # Every stack must name a server and a repo, and must not carry the
-          # auto_pull + run_build combination that fails on locally built
-          # images. These two mistakes are the ones actually made so far.
+          # These assertions each encode a mistake that actually broke the box
+          # once. The last two matter most: the sync runs with delete = true,
+          # so a resource that drops out of scope is not ignored, it is DELETED.
           errors = []
           for path in sorted(pathlib.Path("komodo/syncs").glob("*.toml")):
               try:
@@ -55,6 +55,24 @@ jobs:
               except tomllib.TOMLDecodeError as exc:
                   errors.append(f"{path}: {exc}")
                   continue
+
+              # Declaring the sync inside its own files fails every run with
+              # "ResourceSync busy", and a failed stage aborts the procedure.
+              if doc.get("resource_sync"):
+                  errors.append(
+                      f"{path}: declares a [[resource_sync]] — it cannot update "
+                      "itself; the sync is hand-created in the UI"
+                  )
+
+              for kind in ("stack", "server", "procedure", "deployment", "build"):
+                  for res in doc.get(kind, []):
+                      name = res.get("name", "<unnamed>")
+                      if "homelab" not in res.get("tags", []):
+                          errors.append(
+                              f"{path}: {kind} '{name}' is missing the 'homelab' "
+                              "tag — match_tags would put it out of sync scope"
+                          )
+
               for stack in doc.get("stack", []):
                   name = stack.get("name", "<unnamed>")
                   cfg = stack.get("config", {})
@@ -67,6 +85,17 @@ jobs:
                           f"{path}: stack '{name}' sets run_build with "
                           "auto_pull — compose pull fails on locally built images"
                       )
+
+              for proc in doc.get("procedure", []):
+                  # A disabled or unparsed schedule on the poller stops the
+                  # whole GitOps loop, and no later commit can restart it.
+                  if proc.get("name") == "poll-git-redeploy":
+                      pcfg = proc.get("config", {})
+                      if not pcfg.get("schedule_enabled", True):
+                          errors.append(f"{path}: poll-git-redeploy schedule is disabled")
+                      if not pcfg.get("schedule"):
+                          errors.append(f"{path}: poll-git-redeploy has no schedule")
+
               print(f"{path}: ok "
                     f"({len(doc.get('stack', []))} stacks, "
                     f"{len(doc.get('procedure', []))} procedures)")

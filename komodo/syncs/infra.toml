@@ -8,40 +8,55 @@
 # See ../../README.md for how this file gets applied and how to add a service.
 
 # ---------------------------------------------------------------------------
-# The sync resource, declaring itself.
+# THE SYNC ITSELF IS NOT DECLARED HERE, AND MUST NOT BE.
 #
-# One ResourceSync must be created by hand in the UI the first time (Komodo
-# never discovers sync files on its own). Name it exactly `homelab` and point
-# it at this directory; from then on it manages itself through git.
+# It used to be, and it broke the whole loop. A sync holds a lock on its own
+# resource while it runs, so applying a `[[resource_sync]] homelab` block from
+# inside that same run always fails:
+#
+#   ERROR: failed to update config on ResourceSync 'homelab' | ResourceSync busy
+#
+# That is not a race — it is structural, and it happens on every run where the
+# declared config differs from the database. The damage is not the error line:
+# a failed stage aborts the whole procedure (bin/core/src/helpers/procedure.rs
+# propagates it with `?`), so stage 2 never runs and NOTHING redeploys.
+#
+# The sync is therefore hand-created in the UI, once, and its settings live
+# there rather than in git. Recreate it with:
+#
+#   Name           homelab          (must match `params.sync` in the procedure)
+#   Git provider   github.com
+#   Repo           namanvashistha/homelab
+#   Branch         main
+#   Resource path  komodo/syncs
+#   Git account    (blank — public repo)
+#   Match tags     homelab          ← REQUIRED, see below
+#   Delete         ON               ← only safe together with match tags
+#   Managed        OFF. That would let the UI write back into these files;
+#                  git is the input, not the output.
+#   Include variables / user groups   OFF. Secrets stay in the database —
+#                  this repo is public.
+#
+# WHY match_tags IS LOAD-BEARING
+# Delete mode walks EVERY resource type and removes anything IN SCOPE that is
+# not declared here (bin/core/src/sync/execute.rs). Unscoped, that includes the
+# sync itself — which is not declared, for the reason above — so the first run
+# would delete the thing running it, and the whole loop with it.
+#
+# `match_tags = ["homelab"]` narrows scope on BOTH sides of the diff
+# (include_resource_by_tags, bin/core/src/sync/mod.rs): only resources carrying
+# the tag are considered, in the database and in these files. Everything
+# declared here is tagged `homelab`; the sync is deliberately not. So delete
+# means "remove homelab-tagged resources that left git" and can never reach
+# the sync, or anything else created outside this repo.
+#
+# The rule that follows: A NEW RESOURCE MUST CARRY THE `homelab` TAG, or the
+# sync silently ignores it — it will never be created, and it will never be
+# deleted. Untagged is out of scope, not managed.
+#
+# Everything else on the instance IS declared below and in apps.toml, including
+# the two Procedures Core creates on first boot.
 # ---------------------------------------------------------------------------
-
-[[resource_sync]]
-name = "homelab"
-description = "Applies komodo/syncs from the homelab repo."
-
-[resource_sync.config]
-git_provider = "github.com"
-repo = "namanvashistha/homelab"
-branch = "main"
-# A directory: new .toml files dropped in here are picked up without editing
-# this resource.
-resource_path = ["komodo/syncs"]
-# OFF, deliberately. Komodo's delete mode is not scoped to the resource types
-# these files mention — it walks EVERY type and removes anything not declared
-# (bin/core/src/sync/execute.rs). Enabling it today would destroy the two
-# Procedures Core creates on first boot ("Backup Core Database", "Global Auto
-# Update"). Turn it on only once every resource on the instance is declared
-# here; the payoff is that deleting a block then really does tear the service
-# down, with no silent drift.
-delete = false
-# `managed` would let Komodo WRITE resources back into these files from the UI.
-# Off: git is the input, not the output.
-managed = false
-include_resources = true
-# Variables and secrets stay in the database. This repo is public.
-include_variables = false
-include_user_groups = false
-webhook_enabled = true
 
 # ---------------------------------------------------------------------------
 # The server every stack is deployed to.
@@ -62,6 +77,7 @@ webhook_enabled = true
 [[server]]
 name = "Local"
 description = "The box. Periphery runs beside Core in the bootstrap stack."
+tags = ["homelab"]
 
 [server.config]
 enabled = true
@@ -91,6 +107,7 @@ send_disk_alerts = true
 [[procedure]]
 name = "poll-git-redeploy"
 description = "Every 10 min: apply this repo's declarations, then redeploy any stack whose repo has new commits."
+tags = ["homelab"]
 
 [procedure.config]
 schedule_format = "Cron"
@@ -160,7 +177,7 @@ params.pattern = "*"
 [[stack]]
 name = "self-update"
 description = "One-shot that pulls this repo and applies the bootstrap stack."
-tags = ["infra"]
+tags = ["homelab", "infra"]
 
 [stack.config]
 server = "Local"
@@ -193,3 +210,79 @@ send_alerts = false
 environment = """
 HOMELAB_DIR=/root/homelab
 """
+
+# ---------------------------------------------------------------------------
+# The two Procedures Core creates on first boot.
+#
+# Declared here for one specific reason: `delete = true` on the sync. Delete
+# mode walks every resource type and removes anything in scope that is not
+# declared, so until these existed in git they were the reason delete had to
+# stay off — the first run would have taken the database backup with it.
+#
+# Both blocks are copied from upstream's own documentation (setup/backup.md
+# and deploy/auto-update.md), including the `system` tag, so they match what a
+# fresh install creates. The `homelab` tag is what brings them into this sync's
+# scope; see the note on match_tags at the top of this file.
+#
+# They are ordinary Procedures — upstream's words: "There is nothing special
+# about this Procedure, it's just created by default for guidance /
+# convenience." Change the schedules here and the sync applies them.
+# ---------------------------------------------------------------------------
+
+[[procedure]]
+name = "Backup Core Database"
+description = "Triggers the Core database backup at the scheduled time."
+tags = ["homelab", "system"]
+
+[procedure.config]
+schedule_format = "English"
+schedule = "Every day at 01:00"
+schedule_enabled = true
+schedule_timezone = "Asia/Kolkata"
+# Daily and silent when it works; a failed backup is worth waking up for.
+schedule_alert = false
+failure_alert = true
+
+[[procedure.config.stage]]
+name = "Stage 1"
+enabled = true
+
+[[procedure.config.stage.execution]]
+enabled = true
+
+[procedure.config.stage.execution.execution]
+type = "BackupCoreDatabase"
+params = {}
+
+# Dumps land in /backups, which bootstrap/docker-compose.yml binds to
+# /etc/komodo/backups on the host — outside any volume, so a `docker volume
+# prune` cannot take them. 14 kept by default.
+
+[[procedure]]
+name = "Global Auto Update"
+description = "Pulls and auto updates Stacks and Deployments using 'poll_for_updates' or 'auto_update'."
+tags = ["homelab", "system"]
+
+[procedure.config]
+schedule_format = "English"
+schedule = "Every day at 03:00"
+schedule_enabled = true
+schedule_timezone = "Asia/Kolkata"
+schedule_alert = false
+failure_alert = true
+
+[[procedure.config.stage]]
+name = "Stage 1"
+enabled = true
+
+[[procedure.config.stage.execution]]
+enabled = true
+
+[procedure.config.stage.execution.execution]
+type = "GlobalAutoUpdate"
+params = {}
+
+# Only touches resources that opted in per-stack. Right now that is nothing:
+# every app stack sets poll_for_updates = false because they build from source,
+# and self-update pins nothing worth chasing. It runs, finds no candidates, and
+# exits — kept so the behaviour is declared rather than implicit.
