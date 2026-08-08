@@ -23,10 +23,8 @@ bootstrap/          Layer 1 — run once on a fresh box, then self-applying
   docker-compose.yml  caddy, cloudflared, komodo-mongo, komodo-core, komodo-periphery
   .env.example        the only secrets file on the box (5 values)
 
-stacks/             Layer 2 — compose files Komodo deploys from this repo.
-                    Empty for now: every service currently has its own repo.
-                    Create it when something needs a compose file with no
-                    home of its own.
+stacks/             Layer 2 — compose files Komodo deploys from this repo
+  self-update.yml     one-shot that applies bootstrap/ from inside Komodo
 
 komodo/syncs/       Layer 2 — what Komodo should be running
   infra.toml          the sync itself, the server, the redeploy poller, infra stacks
@@ -38,16 +36,24 @@ jellyfin/           Kubernetes manifest from an earlier experiment.
 
 ### Layer 1: bootstrap
 
-Five services, listed above, and nothing else qualifies.
+Five services, listed above, and nothing else qualifies. `deploy.sh` brings them
+up on a fresh box — the one manual step in the whole system.
 
-A push to this repo reaches them within the hour, via a systemd timer that
-re-runs `deploy.sh` — pull, then `compose up -d`, which is a no-op when nothing
-changed. It has to be systemd and not a Komodo procedure, for the reason at the
-top of this file: a deploy that recreates `komodo-core` would kill the process
-running it. systemd lives outside docker, so such a run survives.
+After that they update themselves, and the trick is worth understanding. Komodo
+cannot deploy these directly: `komodo-periphery` is the process that runs
+`docker compose up`, so a run that recreates Periphery kills the command
+mid-flight. But Komodo *can* deploy a different stack that does it. That is
+`stacks/self-update.yml` — a `docker:cli` one-shot in its own compose project,
+which pulls this repo and applies `bootstrap/docker-compose.yml` from outside
+the blast radius. It replaces Core and Periphery without being replaced itself.
 
-Hourly rather than Komodo's ten minutes, because a change here can briefly
-interrupt ingress or the Komodo UI, and those should never be a surprise.
+Since it is sourced from this repo, the poller below redeploys it on any commit
+here, so bootstrap changes land within ten minutes. No systemd, no cron,
+nothing outside Komodo.
+
+The catch, stated plainly: if a bad commit breaks the bootstrap stack, nothing
+recovers it automatically — Komodo is part of what broke. That is what
+`deploy.sh` is still for.
 
 ### Layer 2: Komodo
 
@@ -136,9 +142,11 @@ Mongo. Their security is the database's security.
   outright on a locally built image. CI checks this.
 - **One compose file owns one concern.** One stack per thing that can fail on
   its own — that is what lets Komodo redeploy one without touching the rest.
-- **Named volumes, not bind mounts,** in `stacks/*.yml`. Komodo clones this repo
-  to `/etc/komodo/stacks/<name>/`, so a relative bind mount silently anchors
-  wherever the clone lands. Volumes keep a stack relocatable.
+- **Named volumes, not *relative* bind mounts,** in `stacks/*.yml`. Komodo clones
+  this repo to `/etc/komodo/stacks/<name>/`, so `./data` silently anchors
+  wherever the clone lands. Absolute host paths are fine and sometimes required
+  — `self-update.yml` mounts `/root/homelab` and the docker socket on purpose,
+  because the daemon, not the container, resolves them.
 - **`delete = false` on the sync, for now.** Komodo's delete mode walks *every*
   resource type and removes anything not declared in these files — including the
   Procedures Core creates on first boot. Turn it on only once everything on the
@@ -149,11 +157,17 @@ Mongo. Their security is the database's security.
 
 ## Operating notes
 
-- **Where things live on the host:** this repo at `~/homelab`, Komodo's clones
-  and runtime at `/etc/komodo/stacks/<name>/`, database backups at
-  `/etc/komodo/backups`.
+- **Where things live on the host:** this repo at `/root/homelab`, Komodo's
+  clones and runtime at `/etc/komodo/stacks/<name>/`, database backups at
+  `/etc/komodo/backups`. That first path is assumed in two places —
+  `HOMELAB_DIR` on the `self-update` stack in `infra.toml`, and `BASE_DIR` in
+  `deploy.sh`. Move the checkout and both need updating.
 - **Redeploy everything by hand:** Komodo → Procedures → `poll-git-redeploy` →
-  Run.
+  Run. That runs the sync and every changed stack, `self-update` included.
+- **Force a bootstrap apply without a commit:** Komodo → Stacks →
+  `self-update` → Deploy. Read its container logs to see what it did.
+- **The bootstrap stack is broken and Komodo is down with it:** the one case
+  nothing here recovers from. SSH in and run `bash ~/homelab/bootstrap/deploy.sh`.
 - **The Server disappeared:** it is only auto-created on a Core startup where no
   server exists at all. Either restart `komodo-core`, or re-run the sync — it is
   declared in `infra.toml` precisely so this is recoverable.

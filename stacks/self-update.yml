@@ -27,6 +27,10 @@
 #
 # RECOVERY: if a bad commit breaks the bootstrap stack, nothing here can fix
 # it — Komodo is part of what broke. SSH in and run bootstrap/deploy.sh by hand.
+#
+# Komodo will show this stack STOPPED once the container exits, which is the
+# intended end state, not a failure. `ignore_services` and `send_alerts = false`
+# on the stack in ../komodo/syncs/infra.toml stop that from reading as red.
 
 services:
   bootstrap-apply:

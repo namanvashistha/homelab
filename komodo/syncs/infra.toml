@@ -178,6 +178,15 @@ run_build = false
 poll_for_updates = false
 auto_update = false
 webhook_enabled = true
+# This stack is SUPPOSED to end up with nothing running. Without this, Komodo
+# reports it STOPPED in red the moment the one-shot exits 0 — upstream's own
+# words for the flag: "an init service might be exited, but the stack should be
+# healthy. This init service should be in `ignore_services`."
+ignore_services = ["bootstrap-apply"]
+# And no StackStateChange alerts: a one-shot finishing its work is not an
+# incident, and this one finishes on every deploy. Real failures surface in the
+# container log and in the procedure's own failure_alert.
+send_alerts = false
 # Where the bootstrap checkout lives on the host — the one path this design
 # assumes. Matches BASE_DIR in bootstrap/deploy.sh, which defaults to
 # $HOME/homelab (so /root/homelab when deploy.sh runs as root).
