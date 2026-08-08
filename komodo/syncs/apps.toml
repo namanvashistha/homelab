@@ -119,31 +119,3 @@ TELEGRAM_BOT_TOKEN=[[TELEGRAM_BOT_TOKEN]]
 IMAGE_USERNAME=[[IMAGE_USERNAME]]
 IMAGE_DISPLAY_NAME=[[IMAGE_DISPLAY_NAME]]
 """
-
-# Straight from docker/awesome-compose — someone else's repo, no fork, no copy
-# in this one. Komodo clones it and builds `fastapi/` in place, which is why
-# the build context and Dockerfile come along for free.
-#
-# Two consequences of not owning the file:
-#   - No caddy label, and upstream publishes 8000 on the host, so this is
-#     reachable at <box-ip>:8000 on the LAN and NOT at a *.namanvashistha.com
-#     hostname. Adding a label means owning the compose file — vendor
-#     `fastapi/` into this repo under stacks/ and point the stack there.
-#   - Their commits to master redeploy it, on the poller's next pass.
-[[stack]]
-name = "fastapi"
-description = "FastAPI hello-world from docker/awesome-compose."
-tags = ["app"]
-
-[stack.config]
-server = "Local"
-git_provider = "github.com"
-repo = "docker/awesome-compose"
-branch = "master"
-# Relative to the repo root: cd here, then use the file below.
-run_directory = "fastapi"
-file_paths = ["compose.yaml"]
-# Builds from the Dockerfile in that directory; nothing to pull.
-run_build = true
-auto_pull = false
-poll_for_updates = false
