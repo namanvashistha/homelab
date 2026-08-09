@@ -207,44 +207,55 @@ description = "Deploy stacks with new commits, then report what moved to Slack."
 schedule_enabled = false
 failure_alert = true
 file_contents = '''
-const stacks = await komodo.read("ListStacks", {});
+// Snapshot what each stack has deployed, before touching anything.
+const before = new Map(
+  (await komodo.read("ListStacks", {})).map(
+    (s) => [s.name, s.info?.deployed_hash ?? null],
+  ),
+);
 
-// A stack is about to change iff its deployed commit differs from the latest
-// on its branch. Captured BEFORE deploying — reading it afterwards would race
-// the status cache.
-const pending = stacks
-  .filter((s) => {
-    const deployed = s.info?.deployed_hash;
-    const latest = s.info?.latest_hash;
-    return latest && deployed !== latest;
-  })
-  .map((s) => ({
-    name: s.name,
-    from: s.info?.deployed_hash ?? "(never deployed)",
-    to: s.info?.latest_hash,
-  }));
-
-// Deploy regardless of the diff above: this call is what actually decides
-// which stacks need redeploying, and it is cheap when none do.
 await komodo.execute("BatchDeployStackIfChanged", { pattern: "*" });
 
-if (pending.length === 0) {
-  console.log("no stacks changed");
-} else {
-  const summary = pending.map((p) => p.name).join(", ");
-  const details = pending
-    .map((p) => p.name + ": " + p.from + " -> " + p.to)
-    .join("\n");
+// Re-read and compare. Reporting the RESULT rather than the intent matters:
+// a stack that fails to converge keeps showing the same pending diff every
+// run, and reporting intent turns that into the same Slack message every ten
+// minutes, forever, while claiming success each time.
+const after = await komodo.read("ListStacks", {});
 
+const moved = [];
+const stuck = [];
+
+for (const s of after) {
+  const was = before.get(s.name) ?? null;
+  const now = s.info?.deployed_hash ?? null;
+  const latest = s.info?.latest_hash ?? null;
+
+  if (was !== now) {
+    moved.push(s.name + ": " + (was ?? "(none)") + " -> " + (now ?? "(none)"));
+  } else if (latest && now !== latest) {
+    // Wanted a new commit, still sitting on the old one. Either the deploy
+    // failed, or Komodo cannot read the project's state (a "Project Missing"
+    // stack never updates its deployed hash).
+    stuck.push(s.name + ": stuck on " + (now ?? "(none)") + ", wants " + latest);
+  }
+}
+
+if (moved.length === 0 && stuck.length === 0) {
+  console.log("nothing changed");
+} else {
+  const parts = [];
+  if (moved.length) parts.push("Deployed " + moved.length + ": " + moved.map((m) => m.split(":")[0]).join(", "));
+  if (stuck.length) parts.push("Stuck " + stuck.length + ": " + stuck.map((m) => m.split(":")[0]).join(", "));
+
+  const details = moved.concat(stuck).join("\n");
   console.log(details);
 
   await komodo.execute("SendAlert", {
     // Serde is rename_all = "UPPERCASE" on SeverityLevel: OK / WARNING /
     // CRITICAL. The lowercase aliases in the Rust source are strum's FromStr,
     // used by the CLI, and are rejected here.
-    level: "OK",
-    message: "Deployed " + pending.length + " stack" +
-      (pending.length > 1 ? "s" : "") + ": " + summary,
+    level: stuck.length ? "WARNING" : "OK",
+    message: parts.join(" | "),
     details,
   });
 }
