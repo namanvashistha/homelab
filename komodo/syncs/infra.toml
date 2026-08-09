@@ -96,6 +96,13 @@ enabled = true
 type = "RunSync"
 params.sync = "homelab"
 
+# Stage 2 used to be a bare BatchDeployStackIfChanged. It is an Action now, for
+# one reason: nothing in Komodo reports "a deploy happened". StackStateChange
+# looks like it would, but bin/core/src/monitor/alert/stack.rs explicitly skips
+# any stack whose action state is `deploying` — a redeploy is deliberately
+# silent, so you only hear about states you did not cause.
+#
+# The action does the same deploy, and knows what it changed while doing it.
 [[procedure.config.stage]]
 name = "Redeploy changed stacks"
 enabled = true
@@ -104,8 +111,8 @@ enabled = true
 enabled = true
 
 [procedure.config.stage.execution.execution]
-type = "BatchDeployStackIfChanged"
-params.pattern = "*"
+type = "RunAction"
+params.action = "notify-deploys"
 
 # ---------------------------------------------------------------------------
 # Where alerts go.
@@ -148,6 +155,9 @@ enabled = true
 #   ServerVersionMismatch  Core and Periphery on different versions, i.e. a
 #                          half-applied bootstrap update
 #   BuildFailed            no-op until Builds are in use; free to leave on
+#   Custom                 REQUIRED for the `notify-deploys` action below —
+#                          SendAlert produces AlertData::Custom, and without it
+#                          whitelisted the message is computed and dropped
 #   Test                   so the Test button proves the whole path
 #
 # Not here, on purpose: ServerCpu and ServerMem, which the server above does
@@ -164,9 +174,75 @@ alert_types = [
   "ResourceSyncPendingUpdates",
   "ServerVersionMismatch",
   "BuildFailed",
+  "Custom",
   "Test",
 ]
 
 [alerter.config.endpoint]
 type = "Slack"
 params.url = "[[SLACK_WEBHOOK_URL]]"
+
+# ---------------------------------------------------------------------------
+# Deploy changed stacks, and say what changed.
+#
+# Stage 2 of the poller. Everything here could be a one-line
+# BatchDeployStackIfChanged, except for the notification: Komodo has no "a
+# deploy happened" alert, and StackStateChange is suppressed while a stack is
+# deploying. So the deploy is wrapped in a script that can see the difference.
+#
+# How it knows: a stack whose `deployed_hash` differs from its `latest_hash` is
+# exactly one about to be redeployed. That comparison is made BEFORE deploying —
+# reading it afterwards would race the status cache.
+#
+# Quiet by default. No commits, no message. Failures are covered separately by
+# failure_alert on the procedure.
+# ---------------------------------------------------------------------------
+
+[[action]]
+name = "notify-deploys"
+description = "Deploy stacks with new commits, then report what moved to Slack."
+
+[action.config]
+# No schedule: the poller runs it as stage 2.
+schedule_enabled = false
+failure_alert = true
+file_contents = '''
+const stacks = await komodo.read("ListStacks", {});
+
+// A stack is about to change iff its deployed commit differs from the latest
+// on its branch. Captured BEFORE deploying — reading it afterwards would race
+// the status cache.
+const pending = stacks
+  .filter((s) => {
+    const deployed = s.info?.deployed_hash;
+    const latest = s.info?.latest_hash;
+    return latest && deployed !== latest;
+  })
+  .map((s) => ({
+    name: s.name,
+    from: s.info?.deployed_hash ?? "(never deployed)",
+    to: s.info?.latest_hash,
+  }));
+
+// Deploy regardless of the diff above: this call is what actually decides
+// which stacks need redeploying, and it is cheap when none do.
+await komodo.execute("BatchDeployStackIfChanged", { pattern: "*" });
+
+if (pending.length === 0) {
+  console.log("no stacks changed");
+} else {
+  const summary = pending.map((p) => p.name).join(", ");
+  const details = pending
+    .map((p) => p.name + ": " + p.from + " -> " + p.to)
+    .join("\n");
+
+  console.log(details);
+
+  await komodo.execute("SendAlert", {
+    level: "ok",
+    message: "Deployed " + pending.length + " stack" +
+      (pending.length > 1 ? "s" : "") + ": " + summary,
+    details,
+  });
+}
+'''
