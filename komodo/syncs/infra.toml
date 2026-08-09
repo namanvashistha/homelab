@@ -96,13 +96,18 @@ enabled = true
 type = "RunSync"
 params.sync = "homelab"
 
-# Stage 2 used to be a bare BatchDeployStackIfChanged. It is an Action now, for
-# one reason: nothing in Komodo reports "a deploy happened". StackStateChange
-# looks like it would, but bin/core/src/monitor/alert/stack.rs explicitly skips
-# any stack whose action state is `deploying` — a redeploy is deliberately
-# silent, so you only hear about states you did not cause.
+# Stage 2: redeploy anything whose own repo moved.
 #
-# The action does the same deploy, and knows what it changed while doing it.
+# This was briefly a TypeScript Action that reported each deploy to Slack,
+# because nothing in Komodo announces "a deploy happened" for a git-driven
+# redeploy — StackStateChange is explicitly skipped while a stack is deploying
+# (bin/core/src/monitor/alert/stack.rs). Forty lines of script for a
+# notification was the wrong trade; `git log` has it if it is ever wanted.
+#
+# The native answer is StackAutoUpdated, which fires when Komodo redeploys a
+# stack because a new IMAGE appeared. It is whitelisted on the alerter below
+# and will start arriving on its own once these stacks pull from ghcr.io
+# instead of building from source.
 [[procedure.config.stage]]
 name = "Redeploy changed stacks"
 enabled = true
@@ -111,8 +116,8 @@ enabled = true
 enabled = true
 
 [procedure.config.stage.execution.execution]
-type = "RunAction"
-params.action = "notify-deploys"
+type = "BatchDeployStackIfChanged"
+params.pattern = "*"
 
 # ---------------------------------------------------------------------------
 # Where alerts go.
@@ -155,9 +160,10 @@ enabled = true
 #   ServerVersionMismatch  Core and Periphery on different versions, i.e. a
 #                          half-applied bootstrap update
 #   BuildFailed            no-op until Builds are in use; free to leave on
-#   Custom                 REQUIRED for the `notify-deploys` action below —
-#                          SendAlert produces AlertData::Custom, and without it
-#                          whitelisted the message is computed and dropped
+#   StackAutoUpdated       the native "this stack changed" alert. Silent today:
+#                          it only fires when a new IMAGE triggers a redeploy,
+#                          and these stacks build from source. Whitelisted now
+#                          so it works the moment they pull from ghcr.io.
 #   Test                   so the Test button proves the whole path
 #
 # Not here, on purpose: ServerCpu and ServerMem, which the server above does
@@ -174,89 +180,10 @@ alert_types = [
   "ResourceSyncPendingUpdates",
   "ServerVersionMismatch",
   "BuildFailed",
-  "Custom",
+  "StackAutoUpdated",
   "Test",
 ]
 
 [alerter.config.endpoint]
 type = "Slack"
 params.url = "[[SLACK_WEBHOOK_URL]]"
-
-# ---------------------------------------------------------------------------
-# Deploy changed stacks, and say what changed.
-#
-# Stage 2 of the poller. Everything here could be a one-line
-# BatchDeployStackIfChanged, except for the notification: Komodo has no "a
-# deploy happened" alert, and StackStateChange is suppressed while a stack is
-# deploying. So the deploy is wrapped in a script that can see the difference.
-#
-# How it knows: a stack whose `deployed_hash` differs from its `latest_hash` is
-# exactly one about to be redeployed. That comparison is made BEFORE deploying —
-# reading it afterwards would race the status cache.
-#
-# Quiet by default. No commits, no message. Failures are covered separately by
-# failure_alert on the procedure.
-# ---------------------------------------------------------------------------
-
-[[action]]
-name = "notify-deploys"
-description = "Deploy stacks with new commits, then report what moved to Slack."
-
-[action.config]
-# No schedule: the poller runs it as stage 2.
-schedule_enabled = false
-failure_alert = true
-file_contents = '''
-// Snapshot what each stack has deployed, before touching anything.
-const before = new Map(
-  (await komodo.read("ListStacks", {})).map(
-    (s) => [s.name, s.info?.deployed_hash ?? null],
-  ),
-);
-
-await komodo.execute("BatchDeployStackIfChanged", { pattern: "*" });
-
-// Re-read and compare. Reporting the RESULT rather than the intent matters:
-// a stack that fails to converge keeps showing the same pending diff every
-// run, and reporting intent turns that into the same Slack message every ten
-// minutes, forever, while claiming success each time.
-const after = await komodo.read("ListStacks", {});
-
-const moved = [];
-const stuck = [];
-
-for (const s of after) {
-  const was = before.get(s.name) ?? null;
-  const now = s.info?.deployed_hash ?? null;
-  const latest = s.info?.latest_hash ?? null;
-
-  if (was !== now) {
-    moved.push(s.name + ": " + (was ?? "(none)") + " -> " + (now ?? "(none)"));
-  } else if (latest && now !== latest) {
-    // Wanted a new commit, still sitting on the old one. Either the deploy
-    // failed, or Komodo cannot read the project's state (a "Project Missing"
-    // stack never updates its deployed hash).
-    stuck.push(s.name + ": stuck on " + (now ?? "(none)") + ", wants " + latest);
-  }
-}
-
-if (moved.length === 0 && stuck.length === 0) {
-  console.log("nothing changed");
-} else {
-  const parts = [];
-  if (moved.length) parts.push("Deployed " + moved.length + ": " + moved.map((m) => m.split(":")[0]).join(", "));
-  if (stuck.length) parts.push("Stuck " + stuck.length + ": " + stuck.map((m) => m.split(":")[0]).join(", "));
-
-  const details = moved.concat(stuck).join("\n");
-  console.log(details);
-
-  await komodo.execute("SendAlert", {
-    // Serde is rename_all = "UPPERCASE" on SeverityLevel: OK / WARNING /
-    // CRITICAL. The lowercase aliases in the Rust source are strum's FromStr,
-    // used by the CLI, and are rejected here.
-    level: stuck.length ? "WARNING" : "OK",
-    message: parts.join(" | "),
-    details,
-  });
-}
-'''
