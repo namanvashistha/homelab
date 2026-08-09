@@ -133,7 +133,7 @@ params.action = "notify-deploys"
 
 [[alerter]]
 name = "slack"
-description = "Alerts to Slack."
+description = "Slack Alerts."
 
 [alerter.config]
 enabled = true
