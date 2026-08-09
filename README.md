@@ -170,28 +170,35 @@ Mongo. Their security is the database's security.
 
 ## Alerts
 
-Two halves that fail independently: `komodo/syncs/*.toml` decides **what gets
-raised**, an Alerter in the UI decides **where it goes**. Without the Alerter,
-Komodo computes every alert and silently drops it — the state this instance was
-in until Slack was wired up.
+Two halves, both declared in `infra.toml`: the `[[server]]` and stack configs
+decide **what gets raised**, and the `[[alerter]]` decides **where it goes**.
+Without an enabled alerter, Komodo computes every alert and silently drops it —
+the state this instance was in until Slack was wired up.
 
-The Alerter lives in the UI rather than git because a Slack webhook URL is a
-secret and alerter configs are *not* interpolated (`interpolate_*` covers
-stacks, repos, builds and deployments only), so `[[SLACK_URL]]` would be
-written into this public repo verbatim.
+The webhook URL is the only part kept out of git. It is a Komodo Variable,
+referenced as `[[SLACK_WEBHOOK_URL]]` and resolved at **send** time:
+`bin/core/src/alert/slack.rs` runs `interpolate_string` over the URL before
+each post. So the secret never enters this repo, and rotating it is a Variables
+edit with no redeploy.
 
-**Settings → Alerters → New Alerter** — endpoint `Slack`, URL = your Slack
-app's incoming-webhook, enabled on. Then narrow **Alert Types**, or it forwards
-everything:
+**Prerequisite:** Settings → Variables → `SLACK_WEBHOOK_URL`, marked secret,
+holding your Slack app's incoming-webhook URL. Without it the alerter posts to
+the literal string and fails.
+
+The alert types it forwards, and why each earns a Slack message:
 
 - `ServerUnreachable` — the box or Periphery is gone. The one that matters.
 - `ServerDisk` — 80% warning, 90% critical, set in `infra.toml`.
 - `StackStateChange` — an app went down, unhealthy, or recovered.
 - `ProcedureFailed` — the poller broke, so git and reality have stopped
   converging. Otherwise silent, and easy to miss for days.
+- `ResourceSyncPendingUpdates` — the sync computed a diff it could not apply.
+  This is the shape of the `ResourceSync busy` failure that ran red for hours
+  unnoticed.
 - `ServerVersionMismatch` — Core and Periphery on different versions, which is
   what a half-applied bootstrap update looks like.
 - `BuildFailed` — only once Builds are in use.
+- `Test` — so the alerter's Test button actually proves the path end to end.
 
 Deliberately **not** enabled, with the reasoning recorded in `infra.toml`: CPU
 alerts (six stacks build from source; every deploy pegs the CPU) and memory

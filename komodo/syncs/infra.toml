@@ -1,10 +1,10 @@
 # The server, and the procedure that keeps everything in sync with git.
 # Apps live in apps.toml.
 #
-# ALERTS: this file decides what gets raised; the Alerter that delivers it is
-# created by hand in the UI (Settings -> Alerters -> Slack), because the
-# webhook URL is a secret and this repo is public. Without that Alerter every
-# alert below is computed and silently dropped. See README.
+# ALERTS: this file decides both what gets raised and where it goes. The Slack
+# webhook URL is the one part that stays out of git — it is a Komodo Variable,
+# referenced below as [[SLACK_WEBHOOK_URL]]. Create it under
+# Settings -> Variables, marked secret, before the alerter is any use.
 #
 # Note: the sync resource itself is NOT declared here. A sync can't update
 # itself — it holds a lock on its own resource while running, so it fails with
@@ -24,10 +24,9 @@
 name = "Local"
 description = "The box."
 
-# Which alerts this server raises. They go nowhere without an Alerter — that
-# is created in the UI (Settings -> Alerters) because a Slack webhook URL is a
-# secret and alerter configs are NOT interpolated, so [[VAR]] would land in
-# this public repo as a literal.
+# Which alerts this server raises. Where they go is the `slack` alerter at the
+# bottom of this file — without an enabled alerter these are computed and
+# silently dropped.
 [server.config]
 enabled = true
 
@@ -107,3 +106,67 @@ enabled = true
 [procedure.config.stage.execution.execution]
 type = "BatchDeployStackIfChanged"
 params.pattern = "*"
+
+# ---------------------------------------------------------------------------
+# Where alerts go.
+#
+# The webhook URL is interpolated at SEND time, not at sync time — Core resolves
+# [[NAME]] against Variables & Secrets every time it posts
+# (bin/core/src/alert/slack.rs calls interpolate_string on the url before
+# constructing the client). So the secret never touches this repo, and rotating
+# it is a Variables edit with no redeploy.
+#
+# Prerequisite: create SLACK_WEBHOOK_URL under Settings -> Variables, marked
+# secret, holding the incoming-webhook URL from your Slack app. Until it exists
+# the alerter posts to the literal string and fails.
+#
+# Test it from the alerter's page — that fires the `Test` alert type, which is
+# deliberately in the list below so the test actually arrives.
+# ---------------------------------------------------------------------------
+
+[[alerter]]
+name = "slack"
+description = "Alerts to Slack."
+
+[alerter.config]
+enabled = true
+
+# Empty would forward EVERYTHING, including a message on every scheduled run.
+# This list is the set worth interrupting someone for:
+#
+#   ServerUnreachable      the box or Periphery is gone — the one that matters
+#   ServerDisk             80% warn / 90% critical, set on the server above.
+#                          The failure that has actually happened here: 37 GB
+#                          of dead images and build cache.
+#   StackStateChange       an app went down, unhealthy, or came back
+#   ProcedureFailed        the poller broke, so git and reality have stopped
+#                          converging. Otherwise entirely silent.
+#   ResourceSyncPendingUpdates
+#                          the sync computed a diff it could not apply — the
+#                          shape of the "ResourceSync busy" failure that ran
+#                          red for hours unnoticed
+#   ServerVersionMismatch  Core and Periphery on different versions, i.e. a
+#                          half-applied bootstrap update
+#   BuildFailed            no-op until Builds are in use; free to leave on
+#   Test                   so the Test button proves the whole path
+#
+# Not here, on purpose: ServerCpu and ServerMem, which the server above does
+# not raise anyway — see the reasoning there.
+#
+# NOTE ON ORDERING: this key must come BEFORE [alerter.config.endpoint]. TOML
+# assigns bare keys to the most recent table header, so putting it after would
+# silently make it endpoint.alert_types, which Komodo ignores.
+alert_types = [
+  "ServerUnreachable",
+  "ServerDisk",
+  "StackStateChange",
+  "ProcedureFailed",
+  "ResourceSyncPendingUpdates",
+  "ServerVersionMismatch",
+  "BuildFailed",
+  "Test",
+]
+
+[alerter.config.endpoint]
+type = "Slack"
+params.url = "[[SLACK_WEBHOOK_URL]]"
