@@ -239,7 +239,10 @@ if (pending.length === 0) {
   console.log(details);
 
   await komodo.execute("SendAlert", {
-    level: "ok",
+    // Serde is rename_all = "UPPERCASE" on SeverityLevel: OK / WARNING /
+    // CRITICAL. The lowercase aliases in the Rust source are strum's FromStr,
+    // used by the CLI, and are rejected here.
+    level: "OK",
     message: "Deployed " + pending.length + " stack" +
       (pending.length > 1 ? "s" : "") + ": " + summary,
     details,
