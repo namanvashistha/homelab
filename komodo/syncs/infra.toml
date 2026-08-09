@@ -1,6 +1,11 @@
 # The server, and the procedure that keeps everything in sync with git.
 # Apps live in apps.toml.
 #
+# ALERTS: this file decides what gets raised; the Alerter that delivers it is
+# created by hand in the UI (Settings -> Alerters -> Slack), because the
+# webhook URL is a secret and this repo is public. Without that Alerter every
+# alert below is computed and silently dropped. See README.
+#
 # Note: the sync resource itself is NOT declared here. A sync can't update
 # itself — it holds a lock on its own resource while running, so it fails with
 # "ResourceSync busy" and the whole run aborts. It is created once in the UI:
@@ -19,8 +24,47 @@
 name = "Local"
 description = "The box."
 
+# Which alerts this server raises. They go nowhere without an Alerter — that
+# is created in the UI (Settings -> Alerters) because a Slack webhook URL is a
+# secret and alerter configs are NOT interpolated, so [[VAR]] would land in
+# this public repo as a literal.
 [server.config]
 enabled = true
+
+# The one that matters: the box is unreachable, or Periphery stopped
+# answering. Everything else is a detail by comparison.
+send_unreachable_alerts = true
+
+# CPU alerts OFF. Six stacks build from source on this host — chess in Go,
+# limedb five containers from one Dockerfile, salt.md a Go binary plus web
+# assets. Every deploy pegs the CPU for minutes at a time. At the default 90%
+# warning this would page on routine work, and an alert you learn to ignore is
+# worse than no alert.
+send_cpu_alerts = false
+
+# Memory alerts OFF, because they cannot fire. This host runs ZFS, and
+# Periphery computes used memory as `(total - MemAvailable) - zfs_arc`
+# (bin/periphery/src/stats/mem.rs). On this kernel the ARC is already counted
+# in MemAvailable, so the subtraction happens twice, saturates at zero, and the
+# Memory graph reads 0.00 GB no matter the real usage. A threshold against a
+# number pinned at zero never triggers. Turn this back on if that upstream bug
+# is fixed; until then it is false advertising.
+send_mem_alerts = false
+
+# Disk alerts ON, and tightened. This is the failure mode that has actually
+# happened here: 37 GB of dead images and build cache. Six source-building
+# stacks means every deploy leaves a dangling image behind, so disk creeps up
+# on its own with nobody doing anything wrong.
+# Warning earlier than the 75/95 defaults — on a homelab disk, 80% is the point
+# where you want a nudge, not a scramble.
+send_disk_alerts = true
+disk_warning = 80.0
+disk_critical = 90.0
+
+# Fires when Core and Periphery are on different versions — which is exactly
+# what a half-applied bootstrap update looks like. Cheap, and it catches a
+# genuinely confusing state.
+send_version_mismatch_alerts = true
 
 # Every 10 minutes:
 #   1. apply this repo's TOML  (a sync only goes Pending on its own; RunSync

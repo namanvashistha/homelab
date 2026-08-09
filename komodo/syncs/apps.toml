@@ -25,7 +25,12 @@
 #
 # Routing: none of these need anything here. Each repo's compose carries its own
 # `caddy:` label and joins the external `caddy` network, and Caddy picks it up
-# live. Uptime Kuma monitors appear by themselves via AutoKuma.
+# live.
+#
+# Alerts: `send_alerts` defaults to true on a Stack, so each of these raises
+# StackStateChange when it goes down, turns unhealthy, or recovers — the most
+# useful app-level alert there is. Left as the default rather than repeated six
+# times. Set `send_alerts = false` on any stack that flaps by design.
 
 [[stack]]
 name = "chess"

@@ -168,6 +168,37 @@ Mongo. Their security is the database's security.
   reasoning behind a weird pinned tag or a missing `ports:` is the part that is
   expensive to reconstruct.
 
+## Alerts
+
+Two halves that fail independently: `komodo/syncs/*.toml` decides **what gets
+raised**, an Alerter in the UI decides **where it goes**. Without the Alerter,
+Komodo computes every alert and silently drops it — the state this instance was
+in until Slack was wired up.
+
+The Alerter lives in the UI rather than git because a Slack webhook URL is a
+secret and alerter configs are *not* interpolated (`interpolate_*` covers
+stacks, repos, builds and deployments only), so `[[SLACK_URL]]` would be
+written into this public repo verbatim.
+
+**Settings → Alerters → New Alerter** — endpoint `Slack`, URL = your Slack
+app's incoming-webhook, enabled on. Then narrow **Alert Types**, or it forwards
+everything:
+
+- `ServerUnreachable` — the box or Periphery is gone. The one that matters.
+- `ServerDisk` — 80% warning, 90% critical, set in `infra.toml`.
+- `StackStateChange` — an app went down, unhealthy, or recovered.
+- `ProcedureFailed` — the poller broke, so git and reality have stopped
+  converging. Otherwise silent, and easy to miss for days.
+- `ServerVersionMismatch` — Core and Periphery on different versions, which is
+  what a half-applied bootstrap update looks like.
+- `BuildFailed` — only once Builds are in use.
+
+Deliberately **not** enabled, with the reasoning recorded in `infra.toml`: CPU
+alerts (six stacks build from source; every deploy pegs the CPU) and memory
+alerts (ZFS makes Periphery report 0.00 GB used, so no threshold can trigger).
+
+Use the alerter's Test button before trusting any of it.
+
 ## Operating notes
 
 - **Where things live on the host:** this repo at `~/homelab` (`BASE_DIR` in
