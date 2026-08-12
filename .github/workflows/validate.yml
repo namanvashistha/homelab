@@ -25,7 +25,7 @@ jobs:
           # nullglob so an absent stacks/ doesn't leave the literal pattern in
           # the loop and fail on a file called "stacks/*/compose.yaml".
           shopt -s nullglob
-          for f in bootstrap/docker-compose.yml stacks/*/compose.yaml; do
+          for f in bootstrap/docker-compose.yml services/docker-compose.yml stacks/*/compose.yaml; do
             echo "--- $f"
             # Dummy values for every `:?` required var. This proves the file
             # parses and interpolates, not that the real secrets are correct.
@@ -49,7 +49,9 @@ jobs:
 
           # Each assertion encodes a mistake that actually broke the box once.
           errors = []
-          for path in sorted(pathlib.Path("komodo/syncs").glob("*.toml")):
+          toml_files = sorted(pathlib.Path("komodo/syncs").glob("*.toml")) + \
+                       sorted(pathlib.Path("services").glob("*.toml"))
+          for path in toml_files:
               try:
                   doc = tomllib.loads(path.read_text())
               except tomllib.TOMLDecodeError as exc:

@@ -23,8 +23,12 @@ bootstrap/          Layer 1 — run on the host, by hand, rarely
   docker-compose.yml  caddy, cloudflared, komodo-mongo, komodo-core, komodo-periphery
   .env.example        the only secrets file on the box (5 values)
 
+services/           Layer 2 — small off-the-shelf services, no repo of their own
+  docker-compose.yml    add a service here; that is the whole workflow
+  services.toml         the one stack built from it
+
 komodo/syncs/       Layer 2 — what Komodo should be running, reconciled from git
-  infra.toml          the server and the poller that keeps git and reality in sync
+  infra.toml          the server, the poller, and the Slack alerter
   apps.toml           one block per application, each from its own repo
 
 jellyfin/           Kubernetes manifest from an earlier experiment.
@@ -104,7 +108,8 @@ curl -fsSL https://raw.githubusercontent.com/namanvashistha/homelab/main/bootstr
 #      git provider  github.com
 #      repo          namanvashistha/homelab
 #      branch        main
-#      resource path komodo/syncs
+#      resource path komodo/syncs, services   <- BOTH; services.toml
+#                                              lives beside its compose
 #      delete        off          <- leave it off, see Conventions
 #    Save, then EXECUTE. Save only stages the diff; Execute applies it.
 ```
@@ -136,10 +141,17 @@ Push. The poller picks it up within ten minutes. The app's own compose carries
 its `caddy:` label and joins the external `caddy` network, so routing
 configures itself — nothing to add here or in Cloudflare.
 
-**Something with no repo of its own** — put the compose in `stacks/<name>/`
-(the directory does not exist yet) and declare it with
-`repo = "namanvashistha/homelab"`, `run_directory = "stacks/<name>"`,
-`file_paths = ["compose.yaml"]`.
+**Something off the shelf, no repo of its own** — add it to
+`services/docker-compose.yml` and push. That's it: no new stack, no new TOML
+block, no UI. One compose file, one Komodo stack, everything in one folder.
+
+Two rules there: `expose:` plus caddy labels, never `ports:` (a host port
+bypasses Cloudflare Access), and named volumes, never `./data` (Komodo clones
+the repo, so a relative path anchors wherever the clone landed).
+
+The trade-off: one compose file is one project, so a broken service fails the
+deploy for everything else in it. Fine for small stateless things. When one
+grows up, give it its own repo and its own block in `apps.toml`.
 
 **Secrets** go in Komodo (Settings → Variables), never in this repo, and are
 referenced as `[[NAME]]` from a stack's `environment`. Komodo writes them to a
