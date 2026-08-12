@@ -1,9 +1,12 @@
 # One stack per service, all declared here.
 #
 # LAYOUT
-#   services/
-#     services.toml     this file — one [[stack]] block per service
-#     <name>.yml        that service's compose file
+#   komodo/syncs/services.toml   this file — one [[stack]] block per service
+#   services/<name>.yml          that service's compose file
+#
+# The declaration lives in komodo/syncs because that is the sync's resource
+# path, so it is picked up with no change to the sync's configuration. The
+# compose files live in services/ where they are easy to find and edit.
 #
 # Each service is its own Komodo stack and therefore its own compose project.
 # That is the point of the split: a bad image in one cannot fail the deploy of

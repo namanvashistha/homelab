@@ -23,13 +23,13 @@ bootstrap/          Layer 1 — run on the host, by hand, rarely
   docker-compose.yml  caddy, cloudflared, komodo-mongo, komodo-core, komodo-periphery
   .env.example        the only secrets file on the box (5 values)
 
-services/           Layer 2 — small off-the-shelf services, no repo of their own
-  services.toml         one [[stack]] block per service
-  <name>.yml            that service's compose file
+services/           Layer 2 — compose files for off-the-shelf services
+  <name>.yml            one per service, declared in komodo/syncs/services.toml
 
 komodo/syncs/       Layer 2 — what Komodo should be running, reconciled from git
   infra.toml          the server, the poller, and the Slack alerter
   apps.toml           one block per application, each from its own repo
+  services.toml       one block per service in services/
 
 jellyfin/           Kubernetes manifest from an earlier experiment.
                     Not managed by Komodo — compose only here.
@@ -108,8 +108,7 @@ curl -fsSL https://raw.githubusercontent.com/namanvashistha/homelab/main/bootstr
 #      git provider  github.com
 #      repo          namanvashistha/homelab
 #      branch        main
-#      resource path komodo/syncs, services   <- BOTH; services.toml
-#                                              lives beside its compose
+#      resource path komodo/syncs
 #      delete        off          <- leave it off, see Conventions
 #    Save, then EXECUTE. Save only stages the diff; Execute applies it.
 ```
@@ -141,10 +140,10 @@ Push. The poller picks it up within ten minutes. The app's own compose carries
 its `caddy:` label and joins the external `caddy` network, so routing
 configures itself — nothing to add here or in Cloudflare.
 
-**Something off the shelf, no repo of its own** — two files in `services/`:
-the compose as `<name>.yml`, and a block copied from the template at the top of
-`services.toml`. Each service is its own stack, so a bad image in one cannot
-fail the others' deploys.
+**Something off the shelf, no repo of its own** — two files: the compose at
+`services/<name>.yml`, and a block in `komodo/syncs/services.toml` copied from
+the template at the top of it. Each service is its own stack, so a bad image in
+one cannot fail the others' deploys.
 
 Two rules for the compose: `expose:` plus caddy labels, never `ports:` (a host
 port bypasses Cloudflare Access), and named volumes, never `./data` (Komodo
