@@ -1,0 +1,35 @@
+# whoami — traefik's tiny echo server. Answers with the request headers and the
+# container's hostname and IP.
+#
+# Here as the worked example for this folder, and as a genuinely useful probe:
+# when a new service is unreachable, hitting whoami tells you whether the
+# tunnel -> caddy -> container path is intact, or whether the problem is the
+# service itself. A couple of MB, idles at nothing.
+#
+# Declared in ../komodo/syncs/services.toml.
+
+services:
+  whoami:
+    image: traefik/whoami
+    container_name: whoami
+    restart: unless-stopped
+    # No `ports:`. Ingress is cloudflared -> caddy; a host port would publish
+    # this to the LAN and bypass Cloudflare Access.
+    expose:
+      - "80"
+    networks: [caddy]
+    labels:
+      # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
+      caddy: http://whoami.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 80}}"
+    healthcheck:
+      # The image is scratch-based: no shell, no wget, no curl. Its own binary
+      # is the only thing that can run, and `--help`-style flags exit non-zero,
+      # so there is nothing sane to probe with. Komodo reports container state
+      # regardless; the caddy route is the real health signal here.
+      disable: true
+
+networks:
+  # Created by bootstrap/deploy.sh, shared by every stack on the box.
+  caddy:
+    external: true

@@ -1,6 +1,0 @@
-Compose files for the `services` stacks live here, one per service, named
-<service>.yml. They are declared in ../komodo/syncs/services.toml — copy the
-template at the top of that file.
-
-This placeholder exists only so the empty directory survives in git. Delete it
-once a real compose file lands here.
