@@ -1,53 +1,63 @@
-# The one stack built from this folder.
+# One stack per service, all declared here.
 #
-# This file lives here rather than in komodo/syncs so that everything about
-# adding a small service is in one directory: the compose beside its
-# declaration. The sync's Resource Paths must therefore list `services` as well
-# as `komodo/syncs` — a one-time setting on the sync in the UI.
+# LAYOUT
+#   services/
+#     services.toml     this file — one [[stack]] block per service
+#     <name>.yml        that service's compose file
 #
-# You should rarely need to touch this file. Adding a service means editing
-# docker-compose.yml next to it; this block only changes when the stack itself
-# needs different behaviour, or when a new secret has to be passed through.
-
-[[stack]]
-name = "services"
-description = "Small off-the-shelf services with no repo of their own."
-tags = ["app"]
-
-[stack.config]
-server = "Local"
-git_provider = "github.com"
-repo = "namanvashistha/homelab"
-branch = "main"
-# cd here before running compose, so the file below resolves and any relative
-# path in it anchors to this directory.
-run_directory = "services"
-file_paths = ["docker-compose.yml"]
-
-# Published images, nothing built from source. That makes this the one stack
-# where the update flags are the right way round:
-#   auto_pull        pull before deploying, so a redeploy actually gets the
-#                    newer image rather than reusing a stale local one
-#   poll_for_updates surface a newer digest in the UI and raise
-#                    StackImageUpdateAvailable
-#   auto_update      OFF. Unattended upgrades of whatever happens to be in here
-#                    is how you find out at 3am that a `:latest` tag moved.
-#                    Turn it on per-need once something proves stable — that is
-#                    also what makes the native StackAutoUpdated alert fire.
-run_build = false
-auto_pull = true
-poll_for_updates = true
-auto_update = false
-webhook_enabled = true
-
-# The placeholder in the compose file runs `true` and exits, which would
-# otherwise leave this stack reporting STOPPED in red forever. Delete both the
-# service and this line once a real service lives here.
-ignore_services = ["placeholder"]
-
-# Secrets for anything in this folder go here, one line per variable, resolved
-# from Settings -> Variables and written to a .env beside the compose file:
+# Each service is its own Komodo stack and therefore its own compose project.
+# That is the point of the split: a bad image in one cannot fail the deploy of
+# the others, and redeploying one leaves the rest untouched. The earlier
+# version of this folder was a single compose file with every service in it,
+# which was fewer lines and one shared blast radius.
 #
-# environment = """
-# SOMETHING_TOKEN=[[SOMETHING_TOKEN]]
-# """
+# ADDING A SERVICE
+#   1. services/<name>.yml — the compose. Two rules:
+#        - `expose:` plus caddy labels, never `ports:`. A host port bypasses
+#          Cloudflare Access and publishes the service to the LAN.
+#        - named volumes, never `./data`. Komodo clones this repo to
+#          /etc/komodo/stacks/<name>/, so a relative path anchors wherever the
+#          clone landed rather than where you meant.
+#   2. Copy the template below, change the two names.
+#   3. Push. It is running within ten minutes.
+#
+# THE FLAGS, AND WHY THEY ARE THE OPPOSITE OF apps.toml
+# Everything here runs a published image rather than building from source, so
+# pulling is both possible and wanted:
+#   auto_pull = true          get the newer image on redeploy, not a stale local one
+#   poll_for_updates = true   surface a newer digest, raise StackImageUpdateAvailable
+#   auto_update               left off. Turn it on per service once one has
+#                             proved stable — that is also what makes the
+#                             native StackAutoUpdated alert fire for it.
+#
+# SECRETS
+# Add the variable in Komodo (Settings -> Variables), then on that service's
+# block:
+#   environment = """
+#   SOMETHING_TOKEN=[[SOMETHING_TOKEN]]
+#   """
+# Komodo writes it to a .env in the run directory before compose runs.
+#
+# ---------------------------------------------------------------------------
+# TEMPLATE — copy, uncomment, change `whoami` in both places.
+# ---------------------------------------------------------------------------
+#
+# [[stack]]
+# name = "whoami"
+# tags = ["app"]
+#
+# [stack.config]
+# server = "Local"
+# git_provider = "github.com"
+# repo = "namanvashistha/homelab"
+# branch = "main"
+# run_directory = "services"
+# file_paths = ["whoami.yml"]
+# run_build = false
+# auto_pull = true
+# poll_for_updates = true
+# auto_update = false
+#
+# ---------------------------------------------------------------------------
+# Services below.
+# ---------------------------------------------------------------------------

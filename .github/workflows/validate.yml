@@ -25,7 +25,7 @@ jobs:
           # nullglob so an absent stacks/ doesn't leave the literal pattern in
           # the loop and fail on a file called "stacks/*/compose.yaml".
           shopt -s nullglob
-          for f in bootstrap/docker-compose.yml services/docker-compose.yml stacks/*/compose.yaml; do
+          for f in bootstrap/docker-compose.yml services/*.yml stacks/*/compose.yaml; do
             echo "--- $f"
             # Dummy values for every `:?` required var. This proves the file
             # parses and interpolates, not that the real secrets are correct.
