@@ -191,44 +191,66 @@ description = "Slack Alerts."
 [alerter.config]
 enabled = true
 
-# Empty would forward EVERYTHING, including a message on every scheduled run.
-# This list is the set worth interrupting someone for:
+# WHY THIS LIST IS EXPLICIT RATHER THAN EMPTY.
 #
-#   ServerUnreachable      the box or Periphery is gone — the one that matters
-#   ServerDisk             80% warn / 90% critical, set on the server above.
-#                          The failure that has actually happened here: 37 GB
-#                          of dead images and build cache.
-#   StackStateChange       an app went down, unhealthy, or came back
-#   ProcedureFailed        the poller broke, so git and reality have stopped
-#                          converging. Otherwise entirely silent.
-#   ResourceSyncPendingUpdates
-#                          the sync computed a diff it could not apply — the
-#                          shape of the "ResourceSync busy" failure that ran
-#                          red for hours unnoticed
-#   ServerVersionMismatch  Core and Periphery on different versions, i.e. a
-#                          half-applied bootstrap update
-#   BuildFailed            no-op until Builds are in use; free to leave on
-#   StackAutoUpdated       the native "this stack changed" alert. Silent today:
-#                          it only fires when a new IMAGE triggers a redeploy,
-#                          and these stacks build from source. Whitelisted now
-#                          so it works the moment they pull from ghcr.io.
-#   Test                   so the Test button proves the whole path
+# An empty list forwards every variant, and one of them is ScheduleRun. The
+# poll-git-redeploy procedure below runs every ten minutes, so "everything"
+# means about 144 Slack messages a day that say nothing happened. That single
+# type is the entire reason this is a whitelist. Everything else in
+# AlertDataVariant is now here.
 #
-# Not here, on purpose: ServerCpu and ServerMem, which the server above does
-# not raise anyway — see the reasoning there.
+# WHAT THIS LIST DOES AND DOES NOT CONTROL. It filters DELIVERY only. Core
+# computes and stores every alert regardless, so the web UI shows alerts that
+# never reach Slack. If something appears in the UI and not in Slack, it is
+# missing from this list — that is the only mechanism.
 #
-# NOTE ON ORDERING: this key must come BEFORE [alerter.config.endpoint]. TOML
-# assigns bare keys to the most recent table header, so putting it after would
-# silently make it endpoint.alert_types, which Komodo ignores.
+# ORDERING: this key must come BEFORE [alerter.config.endpoint]. TOML assigns
+# bare keys to the most recent table header, so putting it after would silently
+# make it endpoint.alert_types, which Komodo ignores.
+#
+# The two that used to be deliberately excluded, ServerCpu and ServerMem, are
+# in now. CPU alerts are enabled on the server above since builds moved to CI.
+# ServerMem cannot currently fire — the graph is pinned at 0.00 GB, see the
+# long note on send_mem_alerts — but carrying it costs nothing and means the
+# alerter needs no edit when that is fixed upstream.
+#
+# THE ONE TO DROP FIRST IF THIS GETS NOISY: ContainerStateChange. It fires per
+# container rather than per stack, and this box runs about twenty, so a
+# redeploy can produce a burst. StackStateChange alone covers the same ground
+# more coarsely.
+#
+# StackImageUpdateAvailable is newly useful: every stack sets
+# poll_for_updates = true now, so this is how a new published image announces
+# itself while auto_update stays off.
 alert_types = [
+  # -- the box --
   "ServerUnreachable",
+  "ServerCpu",
+  "ServerMem",
   "ServerDisk",
-  "StackStateChange",
-  "ProcedureFailed",
-  "ResourceSyncPendingUpdates",
   "ServerVersionMismatch",
-  "BuildFailed",
+
+  # -- things running on it --
+  "StackStateChange",
+  "ContainerStateChange",
+  "StackImageUpdateAvailable",
   "StackAutoUpdated",
+  "DeploymentImageUpdateAvailable",
+  "DeploymentAutoUpdated",
+
+  # -- things that failed --
+  "ProcedureFailed",
+  "ActionFailed",
+  "BuildFailed",
+  "RepoBuildFailed",
+  "ResourceSyncPendingUpdates",
+
+  # -- never fires here, free to carry --
+  "SwarmUnhealthy",
+  "AwsBuilderTerminationFailed",
+  "Custom",
+
+  # -- proves the path end to end from the alerter's Test button --
   "Test",
 ]
 
