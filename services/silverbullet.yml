@@ -22,6 +22,9 @@ services:
       # path anchors wherever the clone landed.
       - silverbullet-space:/space
     networks: [caddy]
+    # No healthcheck defined: the image ships its own
+    # (curl --fail http://localhost:$SB_PORT/.instance) and Docker inherits it.
+    # Redefining would only risk drifting from upstream.
     labels:
       # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
       caddy: http://silverbullet.namanvashistha.com

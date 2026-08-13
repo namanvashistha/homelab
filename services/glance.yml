@@ -42,6 +42,14 @@ services:
       # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
       caddy: http://homelab.namanvashistha.com
       caddy.reverse_proxy: "{{upstreams 8080}}"
+    healthcheck:
+      # Glance serves GET /api/healthz. Image is alpine, so busybox wget is
+      # there; -O /dev/null keeps the response out of the logs.
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:8080/api/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   # ---- read-only, scoped access to the docker API ----
   # The containers widget needs to ask the daemon what is running. Handing a
@@ -89,6 +97,14 @@ services:
     # network below — an unauthenticated docker API must never be resolvable by
     # every other stack on this box.
     networks: [glance-internal]
+    healthcheck:
+      # The proxy only ever answers /containers; anything else is denied by
+      # design, so probe the one path that should work.
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:2375/containers/json || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     labels:
       komodo.skip:
 
