@@ -106,14 +106,14 @@ enabled = true
 type = "RunSync"
 params.sync = "homelab"
 
-# Stage 2: the CONFIG-change trigger, not the deploy trigger. auto_update
-# handles images now — Komodo polls the registry and redeploys on a new digest,
-# which this stage cannot do safely (it fires on a commit, so it could redeploy
-# while CI was still building and land the previous image).
+# Stage 2: fires ONLY when the compose file CONTENTS change. Not on commits.
+# bin/core/src/api/execute/stack.rs compares stack.info.deployed_contents
+# against remote_contents, so a commit touching only application source is
+# byte-identical here and correctly does nothing.
 #
-# What is left has no other cover: a commit changing a compose file WITHOUT
-# changing an image, e.g. services/glance-config.yaml. No digest moves, and a
-# sync diffs TOML declarations rather than the files they point at.
+# CONSEQUENCE: this stage cannot deploy a code change. auto_update is the only
+# thing that does, via the image digest. If an app stops picking up pushes,
+# check auto_update on that stack before looking here.
 #
 # Nothing in Komodo announces a git-driven redeploy — StackStateChange is
 # skipped while deploying (bin/core/src/monitor/alert/stack.rs). StackAutoUpdated

@@ -81,10 +81,13 @@ The `sync-and-deploy` procedure runs two ordered stages every 10 min: `RunSync`
 to click Execute) then `BatchDeployStackIfChanged`. Order matters: a stack added
 to `projects.toml` must exist before stage 2 can deploy it.
 
-Stage 2 is the **config**-change trigger, not the deploy trigger. Images are
-handled by `auto_update`, which redeploys on a new digest. Stage 2 exists for
-the case nothing else covers: a commit that changes a compose file without
-changing an image.
+Stage 2 fires only when the **compose file contents** change — it diffs
+`deployed_contents` against `remote_contents`, not commits. A commit touching
+only application source is byte-identical there and correctly does nothing.
+
+**So stage 2 cannot deploy a code change.** `auto_update` is the only path, via
+the image digest. If an app stops picking up pushes, check `auto_update` on that
+stack first.
 
 **Routing is label-driven, not configured here.** Cloudflare's wildcard sends
 `*.namanvashistha.com` to `caddy:80`; caddy-docker-proxy watches the docker
