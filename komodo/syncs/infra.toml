@@ -129,6 +129,30 @@ enabled = true
 type = "BatchDeployStackIfChanged"
 params.pattern = "*"
 
+# Stage 3: THE DEPLOY PATH FOR APPLICATION CODE. Everything above misses it.
+#
+# auto_update on a stack is not a background poll — it only does anything when
+# a GlobalAutoUpdate execution runs, and Komodo's default install schedules
+# that once a DAY at 03:00. So a push would sit undeployed until 3am, which is
+# exactly what happened to a foodly UI change.
+#
+# Running it here puts code changes on the same ten-minute loop as everything
+# else. The docs bless this: "GlobalAutoUpdate can be integrated into other
+# Procedures ... there is nothing special about the default Procedure."
+#
+# Its own stage rather than beside stage 2, so the two cannot try to deploy the
+# same stack at once.
+[[procedure.config.stage]]
+name = "Pull new images"
+enabled = true
+
+[[procedure.config.stage.execution]]
+enabled = true
+
+[procedure.config.stage.execution.execution]
+type = "GlobalAutoUpdate"
+params = {}
+
 # ---------------------------------------------------------------------------
 # Where alerts go.
 #
