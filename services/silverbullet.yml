@@ -1,0 +1,36 @@
+# silverbullet — markdown notes / personal wiki. https://silverbullet.md
+#
+# Declared in ../komodo/syncs/services.toml.
+
+services:
+  silverbullet:
+    image: ghcr.io/silverbulletmd/silverbullet:v2
+    container_name: silverbullet
+    restart: unless-stopped
+    # No `ports:`. Ingress is cloudflared -> caddy; a host port would publish
+    # this to the LAN and bypass Cloudflare.
+    expose:
+      - "3000"
+    environment:
+      # user:password, from a Komodo Variable. THIS IS THE ONLY THING KEEPING
+      # these notes private — Cloudflare Access covers komodo.* and nothing
+      # else on this box, so without it the space is world-readable.
+      - SB_USER=${SB_USER:?set SILVERBULLET_USER in Komodo Variables}
+      - TZ=${TZ:-Asia/Kolkata}
+    volumes:
+      # Named, not ./space: Komodo clones this repo per stack, so a relative
+      # path anchors wherever the clone landed.
+      - silverbullet-space:/space
+    networks: [caddy]
+    labels:
+      # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
+      caddy: http://silverbullet.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 3000}}"
+
+networks:
+  # Created by bootstrap/deploy.sh, shared by every stack on the box.
+  caddy:
+    external: true
+
+volumes:
+  silverbullet-space:

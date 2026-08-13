@@ -64,6 +64,8 @@ pages:
             sites:
               - title: whoami
                 url: https://whoami.namanvashistha.com
+              - title: silverbullet
+                url: https://silverbullet.namanvashistha.com
               - title: chess
                 url: https://chess.namanvashistha.com
               - title: foodly

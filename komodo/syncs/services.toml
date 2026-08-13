@@ -94,6 +94,33 @@ poll_for_updates = true
 auto_update = true
 webhook_enabled = false
 
+# Notes are only private because SB_USER is set. Cloudflare Access covers
+# komodo.* and nothing else here, so create SILVERBULLET_USER (Settings ->
+# Variables, marked secret, value `user:password`) BEFORE this first deploys —
+# an unset variable interpolates literally and locks you out with credentials
+# you cannot guess.
+[[stack]]
+name = "silverbullet"
+description = "Markdown notes / personal wiki."
+tags = ["app"]
+deploy = true
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/homelab"
+branch = "main"
+run_directory = "services"
+file_paths = ["silverbullet.yml"]
+run_build = false
+auto_pull = true
+poll_for_updates = true
+auto_update = true
+webhook_enabled = false
+environment = """
+SB_USER=[[SILVERBULLET_USER]]
+"""
+
 [[stack]]
 name = "whoami"
 description = "Echo server — proves the tunnel -> caddy -> container path."

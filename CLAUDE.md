@@ -20,7 +20,7 @@ Everything CI does, runnable locally:
 # compose files parse and interpolate (same loop as .github/workflows/validate.yml)
 for f in bootstrap/docker-compose.yml services/*.yml; do
   CF_TUNNEL_TOKEN=x KOMODO_DB_PASSWORD=x KOMODO_ADMIN_PASSWORD=x \
-  KOMODO_JWT_SECRET=x KOMODO_WEBHOOK_SECRET=x \
+  KOMODO_JWT_SECRET=x KOMODO_WEBHOOK_SECRET=x SB_USER=x \
   docker compose -f "$f" config -q
 done
 
