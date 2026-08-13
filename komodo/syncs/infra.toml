@@ -133,7 +133,7 @@ tags = ["system"]
 
 [procedure.config]
 schedule_format = "Cron"
-schedule = "*/5 * * * *"
+schedule = "0 5,15,25,35,45,55 * * * *"
 schedule_enabled = true
 schedule_timezone = "Asia/Kolkata"
 schedule_alert = false

@@ -98,6 +98,21 @@ jobs:
                                   "which does not exist in this repo"
                               )
 
+              # Komodo cron is SIX fields (seconds first), not the usual five.
+              # A five-field expression is accepted by the sync, then fails at
+              # schedule-parse time with the procedure stuck at "Not Scheduled"
+              # — no run, no failure alert, nothing red.
+              for proc in doc.get("procedure", []) + doc.get("action", []):
+                  pcfg = proc.get("config", {})
+                  schedule = pcfg.get("schedule", "")
+                  if schedule and pcfg.get("schedule_format") == "Cron":
+                      fields = len(schedule.split())
+                      if fields not in (6, 7):
+                          errors.append(
+                              f"{path}: '{proc.get('name')}' cron '{schedule}' has "
+                              f"{fields} fields; Komodo needs 6 or 7 (seconds first)"
+                          )
+
               for proc in doc.get("procedure", []):
                   # A disabled or unparsed schedule on the poller stops the
                   # whole GitOps loop, and no later commit can restart it.
