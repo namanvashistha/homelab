@@ -191,20 +191,49 @@ description = "Slack Alerts."
 [alerter.config]
 enabled = true
 
-# WHY THIS LIST IS EXPLICIT RATHER THAN EMPTY.
+# Empty means NO FILTER — every alert that gets raised is forwarded. That is
+# what is wanted here, and it is deliberate rather than lazy:
 #
-# An empty list forwards every variant, and one of them is ScheduleRun. The
-# poll-git-redeploy procedure below runs every ten minutes, so "everything"
-# means about 144 Slack messages a day that say nothing happened. That single
-# type is the entire reason this is a whitelist. Everything else in
-# AlertDataVariant is now here.
+#   bin/core/src/alert/mod.rs
+#     if !alerter.config.alert_types.is_empty()
+#       && !alerter.config.alert_types.contains(&alert_variant) { return }
 #
-# WHAT THIS LIST DOES AND DOES NOT CONTROL. It filters DELIVERY only. Core
-# computes and stores every alert regardless, so the web UI shows alerts that
-# never reach Slack. If something appears in the UI and not in Slack, it is
-# missing from this list — that is the only mechanism.
+# This used to be an explicit whitelist, which existed for exactly one reason:
+# ScheduleRun, which would otherwise arrive every ten minutes from the poller
+# below and say nothing happened. That reason does not hold. ScheduleRun is
+# only RAISED when a schedule sets `schedule_alert = true`
+# (bin/core/src/schedule.rs), and poll-git-redeploy sets it false. The alert
+# the list was guarding against was never being produced.
+#
+# A whitelist here fails silently and in the wrong direction. Enabling CPU
+# alerts on the server above did nothing visible in Slack for a while because
+# ServerCpu was missing from the list — Core raised it, the web UI showed it,
+# and the alerter dropped it. Any alert type added by a future Komodo release
+# would be swallowed the same way, with nothing to indicate it.
+#
+# THIS KEY CONTROLS DELIVERY ONLY. Core computes and stores every alert
+# regardless of what is here, which is why the web UI can show alerts that
+# never reached Slack. If the two ever disagree again, this is the first place
+# to look — but with an empty list they cannot.
+#
+# What actually gates each alert is the [server.config] block at the top of
+# this file: send_cpu_alerts, send_mem_alerts, send_disk_alerts and friends.
+# That is the correct place to turn something off, because it stops the alert
+# being raised rather than hiding it after the fact.
+#
+# If ScheduleRun is ever wanted, set schedule_alert = true on that procedure.
+# Turning it on will produce a message every ten minutes — that is the trade,
+# and it belongs on the procedure, not here.
+#
+# Note: Test bypasses this filter entirely in the code above, so the alerter's
+# Test button works whatever this is set to.
 #
 # ORDERING: this key must come BEFORE [alerter.config.endpoint]. TOML assigns
+# bare keys to the most recent table header, so putting it after would silently
+# make it endpoint.alert_types, which Komodo ignores.
+alert_types = []
+
+[alerter.config.endpoint]. TOML assigns
 # bare keys to the most recent table header, so putting it after would silently
 # make it endpoint.alert_types, which Komodo ignores.
 #
