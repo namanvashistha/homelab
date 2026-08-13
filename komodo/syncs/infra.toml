@@ -233,56 +233,6 @@ enabled = true
 # make it endpoint.alert_types, which Komodo ignores.
 alert_types = []
 
-[alerter.config.endpoint]. TOML assigns
-# bare keys to the most recent table header, so putting it after would silently
-# make it endpoint.alert_types, which Komodo ignores.
-#
-# The two that used to be deliberately excluded, ServerCpu and ServerMem, are
-# in now. CPU alerts are enabled on the server above since builds moved to CI.
-# ServerMem cannot currently fire — the graph is pinned at 0.00 GB, see the
-# long note on send_mem_alerts — but carrying it costs nothing and means the
-# alerter needs no edit when that is fixed upstream.
-#
-# THE ONE TO DROP FIRST IF THIS GETS NOISY: ContainerStateChange. It fires per
-# container rather than per stack, and this box runs about twenty, so a
-# redeploy can produce a burst. StackStateChange alone covers the same ground
-# more coarsely.
-#
-# StackImageUpdateAvailable is newly useful: every stack sets
-# poll_for_updates = true now, so this is how a new published image announces
-# itself while auto_update stays off.
-alert_types = [
-  # -- the box --
-  "ServerUnreachable",
-  "ServerCpu",
-  "ServerMem",
-  "ServerDisk",
-  "ServerVersionMismatch",
-
-  # -- things running on it --
-  "StackStateChange",
-  "ContainerStateChange",
-  "StackImageUpdateAvailable",
-  "StackAutoUpdated",
-  "DeploymentImageUpdateAvailable",
-  "DeploymentAutoUpdated",
-
-  # -- things that failed --
-  "ProcedureFailed",
-  "ActionFailed",
-  "BuildFailed",
-  "RepoBuildFailed",
-  "ResourceSyncPendingUpdates",
-
-  # -- never fires here, free to carry --
-  "SwarmUnhealthy",
-  "AwsBuilderTerminationFailed",
-  "Custom",
-
-  # -- proves the path end to end from the alerter's Test button --
-  "Test",
-]
-
 [alerter.config.endpoint]
 type = "Slack"
 params.url = "[[SLACK_WEBHOOK_URL]]"
