@@ -129,21 +129,32 @@ enabled = true
 type = "BatchDeployStackIfChanged"
 params.pattern = "*"
 
-# Stage 3: THE DEPLOY PATH FOR APPLICATION CODE. Everything above misses it.
+
+# Komodo creates this procedure on install, scheduled DAILY at 03:00, and it is
+# the only thing that acts on a stack's auto_update flag — that flag is not a
+# background poll. Daily meant a push sat undeployed until 3am, so it is
+# declared here to put its schedule in git and run it every ten minutes.
 #
-# auto_update on a stack is not a background poll — it only does anything when
-# a GlobalAutoUpdate execution runs, and Komodo's default install schedules
-# that once a DAY at 03:00. So a push would sit undeployed until 3am, which is
-# exactly what happened to a foodly UI change.
+# Same name as the one Komodo created, so the sync adopts it rather than making
+# a second one.
 #
-# Running it here puts code changes on the same ten-minute loop as everything
-# else. The docs bless this: "GlobalAutoUpdate can be integrated into other
-# Procedures ... there is nothing special about the default Procedure."
-#
-# Its own stage rather than beside stage 2, so the two cannot try to deploy the
-# same stack at once.
+# Offset five minutes from sync-and-deploy: this box has one core, and pulling
+# images while the sync runs is the one way to make both slow.
+[[procedure]]
+name = "Global Auto Update"
+description = "Every 10 min: pull newer image digests, redeploy stacks with auto_update."
+tags = ["system"]
+
+[procedure.config]
+schedule_format = "Cron"
+schedule = "0 5-59/10 * * * *"
+schedule_enabled = true
+schedule_timezone = "Asia/Kolkata"
+schedule_alert = false
+failure_alert = true
+
 [[procedure.config.stage]]
-name = "Pull new images"
+name = "Pull and redeploy"
 enabled = true
 
 [[procedure.config.stage.execution]]

@@ -76,21 +76,22 @@ localhost. This one is the deployed compose — pulls the published image,
 ghcr.io; the box only pulls. That keeps build CPU and dangling images off the
 host, and is what let the CPU alerts in `infra.toml` be turned back on.
 
-The `sync-and-deploy` procedure runs three ordered stages every 10 min:
-`RunSync` (applies this repo — a sync otherwise only goes *Pending* and waits
-for a human to click Execute), then `BatchDeployStackIfChanged`, then
-`GlobalAutoUpdate`. Order matters: a stack added to `projects.toml` must exist
-before the later stages can deploy it.
+The `sync-and-deploy` procedure runs two ordered stages every 10 min: `RunSync`
+(applies this repo — a sync otherwise only goes *Pending* and waits for a human
+to click Execute) then `BatchDeployStackIfChanged`. Order matters: a stack added
+to `projects.toml` must exist before stage 2 can deploy it.
 
 Stage 2 fires only when the **compose file contents** change — it diffs
 `deployed_contents` against `remote_contents`, not commits. A commit touching
 only application source is byte-identical there and correctly does nothing.
 
-**Application code deploys via stage 3, `GlobalAutoUpdate`.** `auto_update` on a
-stack is not a background poll — it does nothing until a `GlobalAutoUpdate`
-execution runs, and Komodo's default install schedules that once a day at 03:00.
-Stage 3 runs it every 10 min instead. If an app stops picking up pushes, check
-stage 3 before anything else.
+**Application code deploys via the separate `Global Auto Update` procedure.**
+`auto_update` on a stack is not a background poll — it does nothing until a
+`GlobalAutoUpdate` execution runs. Komodo creates that procedure on install
+scheduled daily at 03:00; `infra.toml` declares it under the same name so the
+sync adopts it, and runs it every 10 min, offset 5 min from `sync-and-deploy` so
+one core is not doing both at once. If an app stops picking up pushes, look
+there first.
 
 **Routing is label-driven, not configured here.** Cloudflare's wildcard sends
 `*.namanvashistha.com` to `caddy:80`; caddy-docker-proxy watches the docker

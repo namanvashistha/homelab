@@ -87,11 +87,11 @@ The `sync-and-deploy` procedure runs every ten minutes, in two stages:
 2. **`BatchDeployStackIfChanged`** — redeploys any stack whose **compose file
    contents** changed. Not commits: it diffs the file, so a commit touching only
    application source does nothing here.
-3. **`GlobalAutoUpdate`** — pulls newer image digests and redeploys the stacks
-   that have `auto_update`. This is what deploys application code, since a code
-   change moves the image and not the compose. Komodo's default install runs
-   this once a day at 03:00; running it here puts code on the same ten-minute
-   loop as everything else.
+A second procedure, **`Global Auto Update`**, runs five minutes out of phase and
+pulls newer image digests, redeploying stacks with `auto_update`. That is what
+deploys application code, since a code change moves the image and not the
+compose. Komodo creates it on install scheduled daily at 03:00 — it is declared
+in `infra.toml` to put that schedule in git and run it every ten minutes.
 
 Stages run in order, so a stack added to `projects.toml` exists by the time stage 2
 tries to deploy it. Both happen in one commit's worth of work: push, wait ten
