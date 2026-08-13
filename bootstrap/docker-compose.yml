@@ -142,7 +142,7 @@ services:
       # OAuth callbacks) from this, so a wrong value produces webhooks GitHub
       # cannot reach.
       - KOMODO_HOST=${KOMODO_HOST:-https://komodo.namanvashistha.com}
-      - KOMODO_TITLE=Komodo
+      - KOMODO_TITLE=Homelab
       # -- Core <-> Periphery trust --
       # A keypair generated on first boot into the shared `komodo-keys` volume.
       # Lose that volume and the two stop trusting each other until BOTH are
