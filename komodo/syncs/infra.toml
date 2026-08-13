@@ -34,20 +34,53 @@ enabled = true
 # answering. Everything else is a detail by comparison.
 send_unreachable_alerts = true
 
-# CPU alerts OFF. Six stacks build from source on this host — chess in Go,
-# limedb five containers from one Dockerfile, salt.md a Go binary plus web
-# assets. Every deploy pegs the CPU for minutes at a time. At the default 90%
-# warning this would page on routine work, and an alert you learn to ignore is
-# worse than no alert.
-send_cpu_alerts = false
+# CPU alerts ON, as of the move to ghcr.
+#
+# These were off for a good reason that has stopped applying: six stacks used
+# to build from source on this host, so every deploy pegged the CPU for minutes
+# and would have paged on entirely routine work. Builds happen in each app
+# repo's CI now and this box only pulls, so sustained high CPU means something
+# is actually wrong rather than something is being compiled.
+#
+# Worth watching on this host specifically: it is a 1-core LXC, so a single
+# busy container is 100% of the machine. If these turn out to flap, raise the
+# thresholds rather than switching them off — the signal is real here, it is
+# the ceiling that is low.
+send_cpu_alerts = true
+cpu_warning = 90.0
+cpu_critical = 98.0
 
-# Memory alerts OFF, because they cannot fire. This host runs ZFS, and
-# Periphery computes used memory as `(total - MemAvailable) - zfs_arc`
-# (bin/periphery/src/stats/mem.rs). On this kernel the ARC is already counted
-# in MemAvailable, so the subtraction happens twice, saturates at zero, and the
-# Memory graph reads 0.00 GB no matter the real usage. A threshold against a
-# number pinned at zero never triggers. Turn this back on if that upstream bug
-# is fixed; until then it is false advertising.
+# Memory alerts OFF, because the number they would fire on is meaningless here.
+#
+# The Memory graph reads 0.00 GB no matter the real usage. The earlier note in
+# this file blamed ZFS ARC being double-counted in MemAvailable. That was the
+# wrong diagnosis. The actual cause is a SCOPE MISMATCH, and it is a property
+# of running inside an LXC:
+#
+#   Periphery computes used memory as `(total - MemAvailable) - zfs_arc`
+#   (bin/periphery/src/stats/mem.rs).
+#
+#   Inside an unprivileged LXC, lxcfs virtualises /proc/meminfo, so `total` and
+#   `MemAvailable` describe the CONTAINER — 1 GiB here.
+#
+#   /proc/spl/kstat/zfs/arcstats is NOT virtualised, so `zfs_arc` describes the
+#   HOST, and is several GiB.
+#
+#   Subtracting a host-sized ARC from a container-sized total goes negative and
+#   saturates at zero. Every time.
+#
+# Verify with, on the box:
+#   head -3 /proc/meminfo                       <- container-scale, ~1 GiB
+#   grep '^size' /proc/spl/kstat/zfs/arcstats   <- host-scale, much larger
+#
+# This does not get fixed by a Komodo release, and it does not get fixed by
+# swapping the LXC's distro — it is the container boundary, not the userland.
+# The only configuration where Periphery's memory number is trustworthy is a
+# VM, where /proc is real.
+#
+# So: the true memory figure lives in Proxmox, which measures this guest from
+# the outside and is correct. Read it there, not here. Turn this on only if
+# this box ever becomes a VM.
 send_mem_alerts = false
 
 # Disk alerts ON, and tightened. This is the failure mode that has actually
