@@ -123,7 +123,7 @@ send_version_mismatch_alerts = true
 # Cron is SIX fields: second minute hour day month day-of-week.
 [[procedure]]
 name = "poll-git-redeploy"
-description = "Every 10 min: apply the TOML, then redeploy stacks with new commits."
+description = "Every 10 min: apply the TOML, then redeploy stacks whose compose changed."
 
 [procedure.config]
 schedule_format = "Cron"
@@ -146,16 +146,26 @@ params.sync = "homelab"
 
 # Stage 2: redeploy anything whose own repo moved.
 #
-# This was briefly a TypeScript Action that reported each deploy to Slack,
-# because nothing in Komodo announces "a deploy happened" for a git-driven
-# redeploy — StackStateChange is explicitly skipped while a stack is deploying
-# (bin/core/src/monitor/alert/stack.rs). Forty lines of script for a
-# notification was the wrong trade; `git log` has it if it is ever wanted.
+# NARROWER THAN IT LOOKS, since auto_update went on everywhere. Image changes
+# no longer come through here — Komodo polls the registry itself and redeploys
+# on a new digest, which is both faster and immune to the race this stage has
+# (it fires on a COMMIT, so it could redeploy while CI was still building and
+# land the previous image).
 #
-# The native answer is StackAutoUpdated, which fires when Komodo redeploys a
-# stack because a new IMAGE appeared. It is whitelisted on the alerter below
-# and will start arriving on its own once these stacks pull from ghcr.io
-# instead of building from source.
+# What is left is the case nothing else covers: a commit that changes a compose
+# file WITHOUT changing an image. Editing services/glance-config.yaml, or an
+# app repo's docker-compose.homelab.yaml, moves no digest, so auto_update stays
+# quiet. Stage 1 does not catch it either — a sync diffs the TOML declarations,
+# not the contents of the files they point at. Only this stage sees it.
+#
+# So: keep it. It is the config-change trigger now, not the deploy trigger.
+#
+# Note on announcements: nothing in Komodo reports a git-driven redeploy —
+# StackStateChange is explicitly skipped while a stack is deploying
+# (bin/core/src/monitor/alert/stack.rs). This was briefly a TypeScript Action
+# that posted to Slack; forty lines of script for a notification was the wrong
+# trade, and `git log` has it. StackAutoUpdated is the native answer and now
+# actually fires, since these stacks pull published images.
 [[procedure.config.stage]]
 name = "Redeploy changed stacks"
 enabled = true
