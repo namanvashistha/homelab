@@ -50,9 +50,16 @@
 #   run_build = false         CI builds it; this box pulls
 #   auto_pull = true          get the newer image on redeploy, not a stale local one
 #   poll_for_updates = true   surface a newer digest, raise StackImageUpdateAvailable
-#   auto_update               left off. Turn it on per project once one has
-#                             proved stable — that is also what makes the native
-#                             StackAutoUpdated alert fire for it.
+#   auto_update = true        redeploy when the IMAGE DIGEST changes. This is
+#                             the correct trigger under the ghcr model, and it
+#                             closes a race: BatchDeployStackIfChanged fires on
+#                             a COMMIT, so pushing code would redeploy and pull
+#                             :latest while CI was still building it, landing
+#                             the previous image and staying there until the
+#                             next commit. A digest poll cannot be early.
+#                             Also what makes StackAutoUpdated alerts fire.
+#                             Rollback is the immutable tag CI pushes alongside
+#                             :latest - pin it here and redeploy.
 #
 # Because each block points at its own repo, stage 2's BatchDeployStackIfChanged
 # redeploys only the stack whose repo actually moved. The other update path is
@@ -95,7 +102,7 @@
 # run_build = false
 # auto_pull = true
 # poll_for_updates = true
-# auto_update = false
+# auto_update = true
 # webhook_enabled = true
 #
 # ---------------------------------------------------------------------------
@@ -123,7 +130,7 @@ file_paths = ["docker-compose.homelab.yaml"]
 run_build = false
 auto_pull = true
 poll_for_updates = true
-auto_update = false
+auto_update = true
 webhook_enabled = true
 
 [[stack]]
@@ -140,7 +147,7 @@ file_paths = ["docker-compose.homelab.yaml"]
 run_build = false
 auto_pull = true
 poll_for_updates = true
-auto_update = false
+auto_update = true
 webhook_enabled = true
 
 [[stack]]
@@ -157,7 +164,7 @@ file_paths = ["docker-compose.homelab.yaml"]
 run_build = false
 auto_pull = true
 poll_for_updates = true
-auto_update = false
+auto_update = true
 webhook_enabled = true
 
 # Two images, not one: the repo builds ./web from its own Dockerfile, so its CI
@@ -176,7 +183,7 @@ file_paths = ["docker-compose.homelab.yaml"]
 run_build = false
 auto_pull = true
 poll_for_updates = true
-auto_update = false
+auto_update = true
 webhook_enabled = true
 
 [[stack]]
@@ -193,7 +200,7 @@ file_paths = ["docker-compose.homelab.yaml"]
 run_build = false
 auto_pull = true
 poll_for_updates = true
-auto_update = false
+auto_update = true
 webhook_enabled = true
 # Create these three in Komodo under Settings -> Variables, marking the token
 # as secret. The names match what bot.py reads.

@@ -29,9 +29,16 @@
 # pulling is both possible and wanted:
 #   auto_pull = true          get the newer image on redeploy, not a stale local one
 #   poll_for_updates = true   surface a newer digest, raise StackImageUpdateAvailable
-#   auto_update               left off. Turn it on per service once one has
-#                             proved stable — that is also what makes the
-#                             native StackAutoUpdated alert fire for it.
+#   auto_update = true        redeploy when the IMAGE DIGEST changes. This is
+#                             the correct trigger under the ghcr model, and it
+#                             closes a race: BatchDeployStackIfChanged fires on
+#                             a COMMIT, so pushing code would redeploy and pull
+#                             :latest while CI was still building it, landing
+#                             the previous image and staying there until the
+#                             next commit. A digest poll cannot be early.
+#                             Also what makes StackAutoUpdated alerts fire.
+#                             Rollback is the immutable tag CI pushes alongside
+#                             :latest - pin it here and redeploy.
 #
 # SECRETS
 # Add the variable in Komodo (Settings -> Variables), then on that service's
@@ -59,7 +66,7 @@
 # run_build = false
 # auto_pull = true
 # poll_for_updates = true
-# auto_update = false
+# auto_update = true
 #
 # ---------------------------------------------------------------------------
 # Services below.
@@ -82,7 +89,7 @@ file_paths = ["glance.yml"]
 run_build = false
 auto_pull = true
 poll_for_updates = true
-auto_update = false
+auto_update = true
 
 [[stack]]
 name = "whoami"
@@ -99,4 +106,4 @@ file_paths = ["whoami.yml"]
 run_build = false
 auto_pull = true
 poll_for_updates = true
-auto_update = false
+auto_update = true
