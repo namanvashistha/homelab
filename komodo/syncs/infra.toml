@@ -84,7 +84,7 @@ send_version_mismatch_alerts = true
 #
 # Cron is SIX fields: second minute hour day month day-of-week.
 [[procedure]]
-name = "sync-and-deploy"
+name = "Execute Sync"
 description = "Every 10 min: apply the TOML, then redeploy stacks whose compose changed."
 
 [procedure.config]
