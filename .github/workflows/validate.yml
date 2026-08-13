@@ -100,12 +100,12 @@ jobs:
               for proc in doc.get("procedure", []):
                   # A disabled or unparsed schedule on the poller stops the
                   # whole GitOps loop, and no later commit can restart it.
-                  if proc.get("name") == "poll-git-redeploy":
+                  if proc.get("name") == "sync-and-deploy":
                       pcfg = proc.get("config", {})
                       if not pcfg.get("schedule_enabled", True):
-                          errors.append(f"{path}: poll-git-redeploy schedule is disabled")
+                          errors.append(f"{path}: sync-and-deploy schedule is disabled")
                       if not pcfg.get("schedule"):
-                          errors.append(f"{path}: poll-git-redeploy has no schedule")
+                          errors.append(f"{path}: sync-and-deploy has no schedule")
 
               print(f"{path}: ok "
                     f"({len(doc.get('stack', []))} stacks, "

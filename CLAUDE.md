@@ -34,9 +34,9 @@ Applying changes (on the host, over ssh — never from this checkout):
 bash ~/homelab/bootstrap/deploy.sh   # layer 1 only; idempotent, root required
 ```
 
-Layer 2 needs nothing: push to `main`, and the `poll-git-redeploy` procedure
+Layer 2 needs nothing: push to `main`, and the `sync-and-deploy` procedure
 applies it within ten minutes. To skip the wait: Komodo UI → Procedures →
-`poll-git-redeploy` → Run.
+`sync-and-deploy` → Run.
 
 ## Architecture: two layers, one rule
 
@@ -52,7 +52,7 @@ this layer is manual and why it must stay at five services.
 
 **Layer 2 — `komodo/syncs/*.toml`.** Everything else. Komodo reads the whole
 directory (recursively), diffs against reality, applies. Split by kind:
-- `infra.toml` — the `Local` server, the `poll-git-redeploy` procedure, the Slack alerter
+- `infra.toml` — the `Local` server, the `sync-and-deploy` procedure, the Slack alerter
 - `projects.toml` — apps whose source I own. Declarations only: the compose is `docker-compose.homelab.yaml` **in the app's own repo**, and the image is `ghcr.io/namanvashistha/<name>`
 - `services.toml` — off-the-shelf apps. The compose is `services/<name>.yml` in this repo, and the image is a vendor's
 
@@ -74,13 +74,17 @@ localhost. This one is the deployed compose — pulls the published image,
 
 **The box never builds.** Each project's repo builds on push and pushes to
 ghcr.io; the box only pulls. That keeps build CPU and dangling images off the
-host, and is what would let the CPU alerts in `infra.toml` be turned back on.
+host, and is what let the CPU alerts in `infra.toml` be turned back on.
 
-The `poll-git-redeploy` procedure runs two ordered stages every 10 min: `RunSync`
+The `sync-and-deploy` procedure runs two ordered stages every 10 min: `RunSync`
 (applies this repo — a sync otherwise only goes *Pending* and waits for a human
-to click Execute) then `BatchDeployStackIfChanged` (redeploys stacks whose own
-repo moved). Order matters: a stack added to `projects.toml` must exist before
-stage 2 can deploy it.
+to click Execute) then `BatchDeployStackIfChanged`. Order matters: a stack added
+to `projects.toml` must exist before stage 2 can deploy it.
+
+Stage 2 is the **config**-change trigger, not the deploy trigger. Images are
+handled by `auto_update`, which redeploys on a new digest. Stage 2 exists for
+the case nothing else covers: a commit that changes a compose file without
+changing an image.
 
 **Routing is label-driven, not configured here.** Cloudflare's wildcard sends
 `*.namanvashistha.com` to `caddy:80`; caddy-docker-proxy watches the docker
@@ -157,7 +161,7 @@ file_paths = ["docker-compose.homelab.yaml"]
 run_build = false          # the box never builds
 auto_pull = true           # published image, so pulling is possible and wanted
 poll_for_updates = true
-auto_update = false        # turn on once it has proved stable
+auto_update = true         # redeploy on a new image digest
 ```
 
 **Then:**
@@ -167,7 +171,7 @@ auto_update = false        # turn on once it has proved stable
    sourced from this repo. A project's compose is unverifiable from here, so a
    typo in `docker-compose.homelab.yaml` surfaces as a failed deploy instead.
 2. Push both repos if it is a project.
-3. Wait ≤10 min, or force it: Komodo → Procedures → `poll-git-redeploy` → Run.
+3. Wait ≤10 min, or force it: Komodo → Procedures → `sync-and-deploy` → Run.
 4. Confirm at `https://<name>.namanvashistha.com`. If it does not answer, hit
    `whoami.namanvashistha.com` first — that isolates tunnel → caddy → container
    from a problem in the service itself.
@@ -201,7 +205,7 @@ detaches the data silently rather than failing.
   `run_directory` + `file_paths` is resolved against the checkout, so a typo
   fails CI instead of failing a deploy ten minutes after a push. Projects are
   skipped — their compose is in another repo and is unverifiable from here.
-- **`poll-git-redeploy` keeps a non-empty, enabled `schedule`.** Disable it and
+- **`sync-and-deploy` keeps a non-empty, enabled `schedule`.** Disable it and
   no later commit can turn it back on — the thing that would apply the fix is
   the thing that is off.
 
@@ -228,12 +232,17 @@ repo — it is public.
 
 ## Conventions
 
-Comments in this repo explain **why**, not what, and they are unusually dense on
-purpose: most lines encode a failure that actually happened (the `komodo.skip`
-labels, the TCP-not-HTTP healthcheck on Caddy, the `alert_types` ordering note
-in `infra.toml`, disabled memory alerts because ZFS makes Periphery report
-0.00 GB). Match that density when editing, and preserve existing reasoning
-rather than tidying it away.
+Comments explain **why**, not what, and most encode a failure that actually
+happened — the `komodo.skip` labels, the TCP-not-HTTP healthcheck on Caddy, the
+`alert_types` ordering note in `infra.toml`. Preserve that reasoning rather than
+tidying it away.
+
+**But keep them brief.** A few lines, not paragraphs. State the reason and the
+consequence and stop — no narration of what was tried, no restating the code
+below it. If an explanation genuinely needs twenty lines it belongs in
+`README.md`, with the comment pointing at it. Long comments in a config file go
+stale silently, and this repo has already carried notes that were confidently
+wrong for months.
 
 `README.md` documents a `jellyfin/` directory that is not present in the working
 tree — a leftover, not a missing file.

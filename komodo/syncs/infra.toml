@@ -34,68 +34,30 @@ enabled = true
 # answering. Everything else is a detail by comparison.
 send_unreachable_alerts = true
 
-# CPU alerts ON, as of the move to ghcr.
-#
-# These were off for a good reason that has stopped applying: six stacks used
-# to build from source on this host, so every deploy pegged the CPU for minutes
-# and would have paged on entirely routine work. Builds happen in each app
-# repo's CI now and this box only pulls, so sustained high CPU means something
-# is actually wrong rather than something is being compiled.
-#
-# Worth watching on this host specifically: it is a 1-core LXC, so a single
-# busy container is 100% of the machine. If these turn out to flap, raise the
-# thresholds rather than switching them off — the signal is real here, it is
-# the ceiling that is low.
+# ON since builds moved to CI. They were off because six stacks compiled here
+# and every deploy pegged the CPU. 1-core LXC, so one busy container is the
+# whole machine — if these flap, raise the thresholds rather than disabling.
 send_cpu_alerts = true
 cpu_warning = 80.0
 cpu_critical = 90.0
 
-# Memory alerts OFF, permanently, until upstream changes. The Memory graph
-# reads 0.00 GB and a threshold against a number pinned at zero cannot fire, so
-# enabling these would be theatre. Diagnosed and measured — TWO separate scope
-# mismatches, either of which alone is enough to pin it at zero.
+# OFF: the graph is pinned at 0.00 GB, so a threshold cannot fire. Two scope
+# mismatches, either one sufficient (bin/periphery/src/stats/mem.rs computes
+# used = (MemTotal - MemAvailable) - zfs_arc, saturating):
 #
-# bin/periphery/src/stats/mem.rs:
-#   used = (MemTotal - MemAvailable) - zfs_arc      [saturating_sub]
-# with zfs_arc read unconditionally from /proc/spl/kstat/zfs/arcstats.
+#   1. lxcfs virtualises /proc/meminfo but not arcstats, so a 1.55 GiB HOST ARC
+#      is subtracted from a 485 MiB GUEST figure. Floors at zero.
+#   2. lxcfs answers per reading process's cgroup, so Periphery in a container
+#      measures itself: 3.3 MiB used, not 485 MiB. Wrong even if 1 were fixed.
 #
-# 1. THE ARC IS HOST-SCOPED, THE TOTALS ARE GUEST-SCOPED.
-#    lxcfs virtualises /proc/meminfo, arcstats it does not. Measured here:
-#      LXC:  MemTotal 1048576 kB   MemAvailable 551332 kB   -> used 485 MiB
-#      ARC:  1667716264 B = 1.55 GiB, i.e. larger than the entire guest
-#    485 MiB - 1.55 GiB saturates to 0. No guest smaller than the host's ARC
-#    can ever report anything else.
+# Masking arcstats is impossible — runc refuses to create a mountpoint under
+# /proc, and Periphery then fails to start (see bootstrap/docker-compose.yml).
+# Fixes that would work: native Periphery via systemd plus
+# InaccessiblePaths=/proc/spl, or a VM. Neither earns its cost here.
 #
-# 2. IN DOCKER, LXCFS REPORTS PERIPHERY'S OWN CGROUP.
-#    lxcfs answers according to the READING PROCESS's cgroup, so Periphery in a
-#    container sees itself, not the box. Same instant, inside the container:
-#      MemTotal 1048576 kB (right)   MemAvailable 1045223 kB (its own 66 MiB)
-#    That makes used 3.3 MiB rather than 485 MiB — still wrong even with the
-#    ARC fixed.
-#
-# WHAT DOES NOT WORK: masking arcstats with a bind mount. runc refuses to
-# create a mountpoint under /proc and Periphery then fails to start, taking
-# Komodo's ability to deploy with it. See bootstrap/docker-compose.yml.
-#
-# WHAT WOULD WORK, neither of which is worth it here:
-#   - Periphery natively via systemd (fixes 2) plus InaccessiblePaths=/proc/spl
-#     on the unit (fixes 1). Costs a bootstrap refactor and migrating the
-#     Core<->Periphery keypair out of a docker volume, which breaks trust if
-#     fumbled.
-#   - A VM instead of an LXC, where /proc is real and neither bug exists. Costs
-#     150-250 MiB of guest kernel out of 1 GiB.
-#
-# Filed upstream with the measurements and a suggested patch (ignore the ARC
-# when it exceeds MemTotal, since an ARC bigger than the machine cannot be
-# inside it):
-#   https://github.com/moghtech/komodo/issues/1139
-#
-# UNTIL THEN, where to actually look:
-#   - per-container memory in Komodo is CORRECT. It comes from the Docker API's
-#     cgroup stats and never touches /proc/meminfo. More useful than the
-#     aggregate anyway, since it says which container is responsible.
-#   - the server total is in the Proxmox UI, which measures this guest from the
-#     outside and is always right.
+# Filed with a patch: https://github.com/moghtech/komodo/issues/1139
+# Meanwhile: per-container memory in Komodo IS correct (cgroup stats, not
+# /proc), and the server total is in Proxmox.
 send_mem_alerts = false
 
 # Disk alerts ON, and tightened. This is the failure mode that has actually
@@ -122,7 +84,7 @@ send_version_mismatch_alerts = true
 #
 # Cron is SIX fields: second minute hour day month day-of-week.
 [[procedure]]
-name = "poll-git-redeploy"
+name = "sync-and-deploy"
 description = "Every 10 min: apply the TOML, then redeploy stacks whose compose changed."
 
 [procedure.config]
@@ -144,28 +106,18 @@ enabled = true
 type = "RunSync"
 params.sync = "homelab"
 
-# Stage 2: redeploy anything whose own repo moved.
+# Stage 2: the CONFIG-change trigger, not the deploy trigger. auto_update
+# handles images now — Komodo polls the registry and redeploys on a new digest,
+# which this stage cannot do safely (it fires on a commit, so it could redeploy
+# while CI was still building and land the previous image).
 #
-# NARROWER THAN IT LOOKS, since auto_update went on everywhere. Image changes
-# no longer come through here — Komodo polls the registry itself and redeploys
-# on a new digest, which is both faster and immune to the race this stage has
-# (it fires on a COMMIT, so it could redeploy while CI was still building and
-# land the previous image).
+# What is left has no other cover: a commit changing a compose file WITHOUT
+# changing an image, e.g. services/glance-config.yaml. No digest moves, and a
+# sync diffs TOML declarations rather than the files they point at.
 #
-# What is left is the case nothing else covers: a commit that changes a compose
-# file WITHOUT changing an image. Editing services/glance-config.yaml, or an
-# app repo's docker-compose.homelab.yaml, moves no digest, so auto_update stays
-# quiet. Stage 1 does not catch it either — a sync diffs the TOML declarations,
-# not the contents of the files they point at. Only this stage sees it.
-#
-# So: keep it. It is the config-change trigger now, not the deploy trigger.
-#
-# Note on announcements: nothing in Komodo reports a git-driven redeploy —
-# StackStateChange is explicitly skipped while a stack is deploying
-# (bin/core/src/monitor/alert/stack.rs). This was briefly a TypeScript Action
-# that posted to Slack; forty lines of script for a notification was the wrong
-# trade, and `git log` has it. StackAutoUpdated is the native answer and now
-# actually fires, since these stacks pull published images.
+# Nothing in Komodo announces a git-driven redeploy — StackStateChange is
+# skipped while deploying (bin/core/src/monitor/alert/stack.rs). StackAutoUpdated
+# is the native answer and now fires, since these stacks pull published images.
 [[procedure.config.stage]]
 name = "Redeploy changed stacks"
 enabled = true
@@ -201,46 +153,24 @@ description = "Slack Alerts."
 [alerter.config]
 enabled = true
 
-# Empty means NO FILTER — every alert that gets raised is forwarded. That is
-# what is wanted here, and it is deliberate rather than lazy:
+# Empty = NO FILTER, deliberately. bin/core/src/alert/mod.rs short-circuits on
+# is_empty, so everything raised is forwarded, including types added by future
+# releases.
 #
-#   bin/core/src/alert/mod.rs
-#     if !alerter.config.alert_types.is_empty()
-#       && !alerter.config.alert_types.contains(&alert_variant) { return }
+# This was a whitelist guarding against one thing, ScheduleRun, which is only
+# raised when a schedule sets schedule_alert = true (bin/core/src/schedule.rs).
+# sync-and-deploy sets it false, so the list excluded an alert nobody produced.
 #
-# This used to be an explicit whitelist, which existed for exactly one reason:
-# ScheduleRun, which would otherwise arrive every ten minutes from the poller
-# below and say nothing happened. That reason does not hold. ScheduleRun is
-# only RAISED when a schedule sets `schedule_alert = true`
-# (bin/core/src/schedule.rs), and poll-git-redeploy sets it false. The alert
-# the list was guarding against was never being produced.
+# A whitelist fails silently and in the wrong direction: enabling CPU alerts did
+# nothing in Slack for a while because ServerCpu was missing here — Core raised
+# it, the UI showed it, the alerter dropped it. THIS KEY GATES DELIVERY ONLY.
+# To actually turn something off, use send_*_alerts in [server.config] above,
+# which stops it being raised.
 #
-# A whitelist here fails silently and in the wrong direction. Enabling CPU
-# alerts on the server above did nothing visible in Slack for a while because
-# ServerCpu was missing from the list — Core raised it, the web UI showed it,
-# and the alerter dropped it. Any alert type added by a future Komodo release
-# would be swallowed the same way, with nothing to indicate it.
+# Test bypasses the filter entirely, so the Test button works regardless.
 #
-# THIS KEY CONTROLS DELIVERY ONLY. Core computes and stores every alert
-# regardless of what is here, which is why the web UI can show alerts that
-# never reached Slack. If the two ever disagree again, this is the first place
-# to look — but with an empty list they cannot.
-#
-# What actually gates each alert is the [server.config] block at the top of
-# this file: send_cpu_alerts, send_mem_alerts, send_disk_alerts and friends.
-# That is the correct place to turn something off, because it stops the alert
-# being raised rather than hiding it after the fact.
-#
-# If ScheduleRun is ever wanted, set schedule_alert = true on that procedure.
-# Turning it on will produce a message every ten minutes — that is the trade,
-# and it belongs on the procedure, not here.
-#
-# Note: Test bypasses this filter entirely in the code above, so the alerter's
-# Test button works whatever this is set to.
-#
-# ORDERING: this key must come BEFORE [alerter.config.endpoint]. TOML assigns
-# bare keys to the most recent table header, so putting it after would silently
-# make it endpoint.alert_types, which Komodo ignores.
+# ORDERING: must come BEFORE [alerter.config.endpoint] — TOML assigns bare keys
+# to the most recent table header.
 alert_types = []
 
 [alerter.config.endpoint]

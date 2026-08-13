@@ -167,7 +167,7 @@ services:
       - KOMODO_FIRST_SERVER_NAME=${KOMODO_SERVER_NAME:-Local}
       # -- polling --
       # Drives image-update polling and sync diffing. NOT a git-commit poll:
-      # redeploy-on-commit is the `poll-git-redeploy` procedure in
+      # redeploy-on-commit is the `sync-and-deploy` procedure in
       # komodo/syncs/infra.toml.
       - KOMODO_RESOURCE_POLL_INTERVAL=5-min
       - TZ=${TZ:-Asia/Kolkata}

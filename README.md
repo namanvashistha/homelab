@@ -79,15 +79,16 @@ containers that change twice a year. `git log` has it if you want it back.
 Everything else. Komodo reads `komodo/syncs/*.toml`, diffs it against what it is
 running, and applies the difference.
 
-The `poll-git-redeploy` procedure runs every ten minutes, in two stages:
+The `sync-and-deploy` procedure runs every ten minutes, in two stages:
 
 1. **`RunSync`** — applies this repo's declarations. Without it a sync only
    *notices* a change, parks in `Pending`, and waits for someone to press
    Execute in the UI. This is that press, on a schedule.
 2. **`BatchDeployStackIfChanged`** — redeploys any stack whose own source repo
-   has new commits.
+   has new commits. This is the *config*-change trigger; new images are handled
+   by `auto_update`, which redeploys on a new digest.
 
-Stages run in order, so a stack added to `apps.toml` exists by the time stage 2
+Stages run in order, so a stack added to `projects.toml` exists by the time stage 2
 tries to deploy it. Both happen in one commit's worth of work: push, wait ten
 minutes.
 
@@ -162,8 +163,9 @@ relative mount of a file that is *in* that repo — foodly's `./setup.sql` — i
 fine, because the clone is exactly where it lives.
 
 Everything runs a published image, mine or a vendor's, so `run_build = false`,
-`auto_pull = true` and `poll_for_updates = true` are correct either way.
-`auto_update` stays off until a given stack has proved stable.
+`auto_pull = true`, `poll_for_updates = true` and `auto_update = true` are
+correct either way. `auto_update` is what deploys a new image, and it is the
+right trigger here because a digest change cannot arrive before CI finishes.
 
 **Secrets** go in Komodo (Settings → Variables), never in this repo, and are
 referenced as `[[NAME]]` from a stack's `environment`. Komodo writes them to a
@@ -241,7 +243,7 @@ Use the alerter's Test button before trusting any of it.
   `deploy.sh`), Komodo's clones and runtime at `/etc/komodo/stacks/<name>/`,
   database backups at `/etc/komodo/backups`.
 - **Apply everything now, without waiting for the schedule:** Komodo →
-  Procedures → `poll-git-redeploy` → Run. That is the sync plus every changed
+  Procedures → `sync-and-deploy` → Run. That is the sync plus every changed
   stack.
 - **Apply a bootstrap change:** `bash ~/homelab/bootstrap/deploy.sh` on the box.
   Nothing else does this — see Layer 1.
