@@ -65,6 +65,25 @@
 # Services below.
 # ---------------------------------------------------------------------------
 
+# The only PUBLIC hostname on this box: homelab.namanvashistha.com needs a
+# Cloudflare Access Bypass policy, or it prompts for login like everything else.
+[[stack]]
+name = "glance"
+description = "The whole box on one public page — containers, uptime, links."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/homelab"
+branch = "main"
+run_directory = "services"
+file_paths = ["glance.yml"]
+run_build = false
+auto_pull = true
+poll_for_updates = true
+auto_update = false
+
 [[stack]]
 name = "whoami"
 description = "Echo server — proves the tunnel -> caddy -> container path."
