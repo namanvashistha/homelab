@@ -76,12 +76,20 @@ localhost. This one is the deployed compose — pulls the published image,
 ghcr.io; the box only pulls. That keeps build CPU and dangling images off the
 host, and is what let the CPU alerts in `infra.toml` be turned back on.
 
-The `sync-and-deploy` procedure runs two ordered stages every 10 min: `RunSync`
-(applies this repo — a sync otherwise only goes *Pending* and waits for a human
-to click Execute) then `BatchDeployStackIfChanged`. Order matters: a stack added
-to `projects.toml` must exist before stage 2 can deploy it.
+`sync-and-deploy` runs `RunSync` every 10 min — a sync otherwise only goes
+*Pending* and waits for a human to click Execute. Because every stack sets
+`deploy = true`, that one execution both applies declarations and redeploys any
+stack whose compose contents or deploy-affecting config changed.
 
-Stage 2 fires only when the **compose file contents** change — it diffs
+`deploy = true` also means a stack not in `Running` state gets redeployed, so
+stopping one in the UI does not stick. Set `deploy = false` on it to stop it
+for real.
+
+**No webhooks anywhere** — `webhook_enabled = false` on every stack and
+procedure, deliberately, since Komodo defaults it to true. Polling is the only
+trigger.
+
+`RunSync` redeploys on **compose file contents** changing — it diffs
 `deployed_contents` against `remote_contents`, not commits. A commit touching
 only application source is byte-identical there and correctly does nothing.
 
@@ -169,6 +177,7 @@ run_build = false          # the box never builds
 auto_pull = true           # published image, so pulling is possible and wanted
 poll_for_updates = true
 auto_update = true         # redeploy on a new image digest
+webhook_enabled = false    # polling only
 ```
 
 **Then:**

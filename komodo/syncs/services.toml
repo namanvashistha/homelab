@@ -29,16 +29,15 @@
 # pulling is both possible and wanted:
 #   auto_pull = true          get the newer image on redeploy, not a stale local one
 #   poll_for_updates = true   surface a newer digest, raise StackImageUpdateAvailable
-#   auto_update = true        redeploy when the IMAGE DIGEST changes. This is
-#                             the correct trigger under the ghcr model, and it
-#                             closes a race: BatchDeployStackIfChanged fires on
-#                             a COMMIT, so pushing code would redeploy and pull
-#                             :latest while CI was still building it, landing
-#                             the previous image and staying there until the
-#                             next commit. A digest poll cannot be early.
-#                             Also what makes StackAutoUpdated alerts fire.
+#   auto_update = true        redeploy when the image DIGEST changes. This is
+#                             the only thing that deploys application code: a
+#                             code commit leaves the compose byte-identical, so
+#                             nothing else notices. Acted on by the Global Auto
+#                             Update procedure, not by a background poll.
 #                             Rollback is the immutable tag CI pushes alongside
 #                             :latest - pin it here and redeploy.
+#   webhook_enabled = false   polling only; Komodo defaults this to true.
+#   deploy = true             let RunSync redeploy when the compose changes.
 #
 # SECRETS
 # Add the variable in Komodo (Settings -> Variables), then on that service's
@@ -55,6 +54,7 @@
 # [[stack]]
 # name = "whoami"
 # tags = ["app"]
+# deploy = true              # let RunSync redeploy it when the compose changes
 #
 # [stack.config]
 # server = "Local"
@@ -67,6 +67,7 @@
 # auto_pull = true
 # poll_for_updates = true
 # auto_update = true
+# webhook_enabled = false     # polling only, no webhooks here
 #
 # ---------------------------------------------------------------------------
 # Services below.
@@ -78,6 +79,7 @@
 name = "glance"
 description = "The whole box on one public page — containers, uptime, links."
 tags = ["app"]
+deploy = true
 
 [stack.config]
 server = "Local"
@@ -90,11 +92,13 @@ run_build = false
 auto_pull = true
 poll_for_updates = true
 auto_update = true
+webhook_enabled = false
 
 [[stack]]
 name = "whoami"
 description = "Echo server — proves the tunnel -> caddy -> container path."
 tags = ["app"]
+deploy = true
 
 [stack.config]
 server = "Local"
@@ -107,3 +111,4 @@ run_build = false
 auto_pull = true
 poll_for_updates = true
 auto_update = true
+webhook_enabled = false

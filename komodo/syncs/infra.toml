@@ -94,6 +94,7 @@ schedule_enabled = true
 schedule_timezone = "Asia/Kolkata"
 schedule_alert = false
 failure_alert = true
+webhook_enabled = false
 
 [[procedure.config.stage]]
 name = "Apply declarations"
@@ -106,30 +107,15 @@ enabled = true
 type = "RunSync"
 params.sync = "homelab"
 
-# Stage 2: fires ONLY when the compose file CONTENTS change. Not on commits.
-# bin/core/src/api/execute/stack.rs compares stack.info.deployed_contents
-# against remote_contents, so a commit touching only application source is
-# byte-identical here and correctly does nothing.
+# There is no second stage. BatchDeployStackIfChanged used to live here, but
+# `deploy = true` on each stack makes RunSync do the same work: it diffs
+# deployed_contents against remote_contents and redeploys on a difference
+# (bin/core/src/sync/deploy.rs), and additionally catches config changes the
+# batch execution never did.
 #
-# CONSEQUENCE: this stage cannot deploy a code change. auto_update is the only
-# thing that does, via the image digest. If an app stops picking up pushes,
-# check auto_update on that stack before looking here.
-#
-# Nothing in Komodo announces a git-driven redeploy — StackStateChange is
-# skipped while deploying (bin/core/src/monitor/alert/stack.rs). StackAutoUpdated
-# is the native answer and now fires, since these stacks pull published images.
-[[procedure.config.stage]]
-name = "Redeploy changed stacks"
-enabled = true
-
-[[procedure.config.stage.execution]]
-enabled = true
-
-[procedure.config.stage.execution.execution]
-type = "BatchDeployStackIfChanged"
-params.pattern = "*"
-
-
+# Consequence of `deploy = true` worth knowing: any stack not in Running state
+# is redeployed, so stopping one in the UI does not stick — it returns within
+# ten minutes. Set `deploy = false` on that stack to stop it for real.
 # Komodo creates this procedure on install, scheduled DAILY at 03:00, and it is
 # the only thing that acts on a stack's auto_update flag — that flag is not a
 # background poll. Daily meant a push sat undeployed until 3am, so it is
@@ -152,6 +138,7 @@ schedule_enabled = true
 schedule_timezone = "Asia/Kolkata"
 schedule_alert = false
 failure_alert = true
+webhook_enabled = false
 
 [[procedure.config.stage]]
 name = "Pull and redeploy"

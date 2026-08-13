@@ -79,14 +79,14 @@ containers that change twice a year. `git log` has it if you want it back.
 Everything else. Komodo reads `komodo/syncs/*.toml`, diffs it against what it is
 running, and applies the difference.
 
-The `sync-and-deploy` procedure runs every ten minutes, in two stages:
+The `sync-and-deploy` procedure runs `RunSync` every ten minutes. Without it a
+sync only *notices* a change, parks in `Pending`, and waits for someone to press
+Execute in the UI. This is that press, on a schedule.
 
-1. **`RunSync`** — applies this repo's declarations. Without it a sync only
-   *notices* a change, parks in `Pending`, and waits for someone to press
-   Execute in the UI. This is that press, on a schedule.
-2. **`BatchDeployStackIfChanged`** — redeploys any stack whose **compose file
-   contents** changed. Not commits: it diffs the file, so a commit touching only
-   application source does nothing here.
+Every stack sets `deploy = true`, so that one execution also redeploys any stack
+whose **compose file contents** changed. Not commits: it diffs the file, so a
+commit touching only application source does nothing. It equally means a stopped
+stack is restarted within ten minutes — `deploy = false` is how you stop one.
 A second procedure, **`Global Auto Update`**, runs five minutes out of phase and
 pulls newer image digests, redeploying stacks with `auto_update`. That is what
 deploys application code, since a code change moves the image and not the

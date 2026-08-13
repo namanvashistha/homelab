@@ -50,21 +50,19 @@
 #   run_build = false         CI builds it; this box pulls
 #   auto_pull = true          get the newer image on redeploy, not a stale local one
 #   poll_for_updates = true   surface a newer digest, raise StackImageUpdateAvailable
-#   auto_update = true        redeploy when the IMAGE DIGEST changes. This is
-#                             the correct trigger under the ghcr model, and it
-#                             closes a race: BatchDeployStackIfChanged fires on
-#                             a COMMIT, so pushing code would redeploy and pull
-#                             :latest while CI was still building it, landing
-#                             the previous image and staying there until the
-#                             next commit. A digest poll cannot be early.
-#                             Also what makes StackAutoUpdated alerts fire.
+#   auto_update = true        redeploy when the image DIGEST changes. This is
+#                             the only thing that deploys application code: a
+#                             code commit leaves the compose byte-identical, so
+#                             nothing else notices. Acted on by the Global Auto
+#                             Update procedure, not by a background poll.
 #                             Rollback is the immutable tag CI pushes alongside
 #                             :latest - pin it here and redeploy.
+#   webhook_enabled = false   polling only; Komodo defaults this to true.
+#   deploy = true             let RunSync redeploy when the compose changes.
 #
-# Because each block points at its own repo, stage 2's BatchDeployStackIfChanged
-# redeploys only the stack whose repo actually moved. The other update path is
-# poll_for_updates on the image digest, which is what fires when CI pushes a new
-# :latest without the compose changing.
+# Each block points at its own repo, so RunSync diffs that repo's compose and
+# redeploys only when it actually changed. Code changes never show up there —
+# they come through the image digest instead.
 #
 # SECRETS
 # Add the variable in Komodo (Settings -> Variables), then on that project's
@@ -92,6 +90,7 @@
 # name = "thing"
 # description = "..."
 # tags = ["app"]
+# deploy = true              # let RunSync redeploy it when the compose changes
 #
 # [stack.config]
 # server = "Local"
@@ -103,7 +102,7 @@
 # auto_pull = true
 # poll_for_updates = true
 # auto_update = true
-# webhook_enabled = true
+# webhook_enabled = false     # polling only, no webhooks here
 #
 # ---------------------------------------------------------------------------
 # Projects below.
@@ -120,6 +119,7 @@
 name = "hyperbole"
 description = "C++ ttyd terminal app."
 tags = ["app"]
+deploy = true
 
 [stack.config]
 server = "Local"
@@ -131,12 +131,13 @@ run_build = false
 auto_pull = true
 poll_for_updates = true
 auto_update = true
-webhook_enabled = true
+webhook_enabled = false
 
 [[stack]]
 name = "chess"
 description = "Multiplayer chess — Go backend, Redis, Postgres."
 tags = ["app"]
+deploy = true
 
 [stack.config]
 server = "Local"
@@ -148,12 +149,13 @@ run_build = false
 auto_pull = true
 poll_for_updates = true
 auto_update = true
-webhook_enabled = true
+webhook_enabled = false
 
 [[stack]]
 name = "foodly"
 description = "Foodly app + MariaDB"
 tags = ["app"]
+deploy = true
 
 [stack.config]
 server = "Local"
@@ -165,7 +167,7 @@ run_build = false
 auto_pull = true
 poll_for_updates = true
 auto_update = true
-webhook_enabled = true
+webhook_enabled = false
 
 # Two images, not one: the repo builds ./web from its own Dockerfile, so its CI
 # pushes limedb and limedb-web.
@@ -173,6 +175,7 @@ webhook_enabled = true
 name = "limedb"
 description = "Distributed KV store — 4 nodes + web UI."
 tags = ["app"]
+deploy = true
 
 [stack.config]
 server = "Local"
@@ -184,12 +187,13 @@ run_build = false
 auto_pull = true
 poll_for_updates = true
 auto_update = true
-webhook_enabled = true
+webhook_enabled = false
 
 [[stack]]
 name = "text-to-image-bot"
 description = "Telegram bot that renders text into cards."
 tags = ["app"]
+deploy = true
 
 [stack.config]
 server = "Local"
@@ -201,7 +205,7 @@ run_build = false
 auto_pull = true
 poll_for_updates = true
 auto_update = true
-webhook_enabled = true
+webhook_enabled = false
 # Create these three in Komodo under Settings -> Variables, marking the token
 # as secret. The names match what bot.py reads.
 environment = """
