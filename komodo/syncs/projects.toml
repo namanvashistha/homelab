@@ -1,0 +1,204 @@
+# Projects — applications whose source I own, as opposed to the off-the-shelf
+# images in services.toml. One [[stack]] block per project.
+#
+# LAYOUT
+#   komodo/syncs/projects.toml           this file — declarations only
+#   <app repo>/docker-compose.homelab.yaml   that project's deployed compose
+#
+# The compose stays in the app's own repo, NOT here, and that is the one place
+# projects differ from services. A service has no repo of its own, so its
+# compose lives in services/. A project does, and keeping the compose beside
+# the code it describes means a change needing both — a new env var, a new port
+# — is one commit instead of two that cannot merge atomically.
+#
+# The cost of that choice, recorded so it is not rediscovered: this repo alone
+# no longer tells you the full topology of the box, and CI here cannot validate
+# those files. Each app repo validates its own.
+#
+# It is a per-stack choice, not a global one. `repo` is a field on every block
+# below, so an app can be moved back into this repo whenever the trade flips.
+#
+# WHY docker-compose.homelab.yaml AND NOT docker-compose.yml
+# The repo's existing docker-compose.yml is the DEV compose: it builds from the
+# Dockerfile and publishes ports to localhost. This one is the deployed compose:
+# it pulls the published image, exposes rather than publishes, and carries the
+# caddy labels. Two different jobs, so two files rather than one with a pile of
+# overrides.
+#
+# The box does not build. The app's repo builds on push and pushes to
+# ghcr.io/namanvashistha/<name>; this box only ever pulls. Building here was
+# what made CPU alerts unusable (see infra.toml) and what filled the disk with
+# dangling images.
+#
+# ADDING A PROJECT
+#   1. In the app's repo: a workflow that builds on push to the default branch
+#      and pushes BOTH `:latest` and `:<git-sha>`. The sha tag is the rollback
+#      handle — `latest` alone cannot be rolled back to anything.
+#   2. Make the ghcr package public, or give Komodo a read-only PAT. A private
+#      package fails the deploy with an auth error that looks nothing like the
+#      actual cause.
+#   3. In the app's repo: docker-compose.homelab.yaml. Same two rules as a
+#      service compose:
+#        - `expose:` plus caddy labels, never `ports:`
+#        - named volumes, never `./data`
+#      Relative mounts of files that live in that repo (foodly's ./setup.sql)
+#      are fine — the clone is where they are.
+#   4. Copy the template below, change the names.
+#   5. Push both. It is running within ten minutes.
+#
+# THE FLAGS
+#   run_build = false         CI builds it; this box pulls
+#   auto_pull = true          get the newer image on redeploy, not a stale local one
+#   poll_for_updates = true   surface a newer digest, raise StackImageUpdateAvailable
+#   auto_update               left off. Turn it on per project once one has
+#                             proved stable — that is also what makes the native
+#                             StackAutoUpdated alert fire for it.
+#
+# Because each block points at its own repo, stage 2's BatchDeployStackIfChanged
+# redeploys only the stack whose repo actually moved. The other update path is
+# poll_for_updates on the image digest, which is what fires when CI pushes a new
+# :latest without the compose changing.
+#
+# SECRETS
+# Add the variable in Komodo (Settings -> Variables), then on that project's
+# block:
+#   environment = """
+#   SOMETHING_TOKEN=[[SOMETHING_TOKEN]]
+#   """
+# Komodo writes it to a .env in the run directory before compose runs.
+#
+# ROUTING
+# Nothing needed here. The compose carries the `caddy:` label and joins the
+# external `caddy` network, and Caddy picks it up live.
+#
+# ALERTS
+# `send_alerts` defaults to true on a Stack, so each of these raises
+# StackStateChange when it goes down, turns unhealthy, or recovers — the most
+# useful app-level alert there is. Left as the default rather than repeated on
+# every block. Set `send_alerts = false` on any project that flaps by design.
+#
+# ---------------------------------------------------------------------------
+# TEMPLATE — copy, uncomment, change the names.
+# ---------------------------------------------------------------------------
+#
+# [[stack]]
+# name = "thing"
+# description = "..."
+# tags = ["app"]
+#
+# [stack.config]
+# server = "Local"
+# git_provider = "github.com"
+# repo = "namanvashistha/thing"
+# branch = "main"
+# file_paths = ["docker-compose.homelab.yaml"]
+# run_build = false
+# auto_pull = true
+# poll_for_updates = true
+# auto_update = false
+# webhook_enabled = true
+#
+# ---------------------------------------------------------------------------
+# Projects below.
+#
+# Each one's docker-compose.homelab.yaml is that repo's own compose with the
+# `build:` swapped for an `image:`, and nothing else restructured.
+#
+# NONE OF THESE DEPLOY UNTIL TWO THINGS EXIST in the app's repo: the
+# docker-compose.homelab.yaml, and a ghcr.io image for it to pull. Until then
+# the stack fails — on a missing file first, then on a missing image.
+# ---------------------------------------------------------------------------
+
+[[stack]]
+name = "hyperbole"
+description = "C++ ttyd terminal app."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/hyperbole"
+branch = "master"
+file_paths = ["docker-compose.homelab.yaml"]
+run_build = false
+auto_pull = true
+poll_for_updates = true
+auto_update = false
+webhook_enabled = true
+
+[[stack]]
+name = "chess"
+description = "Multiplayer chess — Go backend, Redis, Postgres."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/chess"
+branch = "main"
+file_paths = ["docker-compose.homelab.yaml"]
+run_build = false
+auto_pull = true
+poll_for_updates = true
+auto_update = false
+webhook_enabled = true
+
+[[stack]]
+name = "foodly"
+description = "Foodly app + MariaDB"
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/foodly"
+branch = "master"
+file_paths = ["docker-compose.homelab.yaml"]
+run_build = false
+auto_pull = true
+poll_for_updates = true
+auto_update = false
+webhook_enabled = true
+
+# Two images, not one: the repo builds ./web from its own Dockerfile, so its CI
+# pushes limedb and limedb-web.
+[[stack]]
+name = "limedb"
+description = "Distributed KV store — 4 nodes + web UI."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/limedb"
+branch = "main"
+file_paths = ["docker-compose.homelab.yaml"]
+run_build = false
+auto_pull = true
+poll_for_updates = true
+auto_update = false
+webhook_enabled = true
+
+[[stack]]
+name = "text-to-image-bot"
+description = "Telegram bot that renders text into cards."
+tags = ["app"]
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/text-to-image-bot"
+branch = "main"
+file_paths = ["docker-compose.homelab.yaml"]
+run_build = false
+auto_pull = true
+poll_for_updates = true
+auto_update = false
+webhook_enabled = true
+# Create these three in Komodo under Settings -> Variables, marking the token
+# as secret. The names match what bot.py reads.
+environment = """
+TELEGRAM_BOT_TOKEN=[[TELEGRAM_BOT_TOKEN]]
+IMAGE_USERNAME=[[IMAGE_USERNAME]]
+IMAGE_DISPLAY_NAME=[[IMAGE_DISPLAY_NAME]]
+"""

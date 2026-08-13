@@ -22,10 +22,14 @@ jobs:
       # and interpolates, not that the secrets are correct.
       - name: Validate compose files
         run: |
-          # nullglob so an absent stacks/ doesn't leave the literal pattern in
-          # the loop and fail on a file called "stacks/*/compose.yaml".
+          # Only the compose files this repo owns. Projects keep theirs in
+          # their own repo (see komodo/syncs/projects.toml), so they are
+          # validated there, not here.
+          #
+          # nullglob so an empty services/ doesn't leave the literal pattern in
+          # the loop and fail on a file called "services/*.yml".
           shopt -s nullglob
-          for f in bootstrap/docker-compose.yml services/*.yml stacks/*/compose.yaml; do
+          for f in bootstrap/docker-compose.yml services/*.yml; do
             echo "--- $f"
             # Dummy values for every `:?` required var. This proves the file
             # parses and interpolates, not that the real secrets are correct.
@@ -78,6 +82,20 @@ jobs:
                           f"{path}: stack '{name}' sets run_build with "
                           "auto_pull — compose pull fails on locally built images"
                       )
+
+                  # Stacks sourced from THIS repo name a compose file that is in
+                  # this checkout, so a typo is catchable here rather than as a
+                  # failed deploy ten minutes after a push. Stacks pointing at
+                  # another repo are unverifiable from here and skipped.
+                  if cfg.get("repo", "").endswith("/homelab"):
+                      run_dir = cfg.get("run_directory", "")
+                      for rel in cfg.get("file_paths", []):
+                          target = pathlib.Path(run_dir) / rel
+                          if not target.is_file():
+                              errors.append(
+                                  f"{path}: stack '{name}' references {target}, "
+                                  "which does not exist in this repo"
+                              )
 
               for proc in doc.get("procedure", []):
                   # A disabled or unparsed schedule on the poller stops the

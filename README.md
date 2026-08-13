@@ -23,17 +23,30 @@ bootstrap/          Layer 1 — run on the host, by hand, rarely
   docker-compose.yml  caddy, cloudflared, komodo-mongo, komodo-core, komodo-periphery
   .env.example        the only secrets file on the box (5 values)
 
-services/           Layer 2 — compose files for off-the-shelf services
-  <name>.yml            one per service, declared in komodo/syncs/services.toml
+services/           Layer 2 — compose files for off-the-shelf apps
+  <name>.yml            image from a vendor, no repo of its own
 
 komodo/syncs/       Layer 2 — what Komodo should be running, reconciled from git
   infra.toml          the server, the poller, and the Slack alerter
-  apps.toml           one block per application, each from its own repo
-  services.toml       one block per service in services/
-
-jellyfin/           Kubernetes manifest from an earlier experiment.
-                    Not managed by Komodo — compose only here.
+  projects.toml       one block per app of mine — compose lives in ITS repo
+  services.toml       one block per compose in services/
 ```
+
+**Projects vs services** is one question: do I own the source? A service does
+not have a repo of its own, so its compose lives here. A project does, so its
+compose is `docker-compose.homelab.yaml` in that repo, beside the code it
+describes — a change needing both is one commit instead of two that cannot merge
+atomically. The cost, stated plainly: this repo alone no longer describes the
+whole box. It is a per-stack choice, and `repo` is a field on every block.
+
+That file is separate from the repo's own `docker-compose.yml`, which is the
+dev compose — builds from the Dockerfile, publishes to localhost. The homelab
+one pulls the published image, exposes rather than publishes, and carries the
+caddy labels.
+
+**Nothing builds on the box.** Each project's repo builds on push and pushes to
+ghcr.io; the box only pulls. Building here was what made CPU alerts unusable and
+what filled the disk with dangling images.
 
 ### Layer 1: bootstrap
 
@@ -116,41 +129,41 @@ curl -fsSL https://raw.githubusercontent.com/namanvashistha/homelab/main/bootstr
 That single Execute creates the server, the poller, and every stack. From then
 on the UI is for looking, not for editing.
 
-## Adding a service
+## Adding a project or a service
 
-**An app with its own repo** — append to `komodo/syncs/apps.toml`:
+One question: **do I own the source?** If yes it is a project, if no it is a
+service.
 
-```toml
-[[stack]]
-name = "thing"
-tags = ["app"]
+**A project, first** — the image has to exist before the box can pull it. In the
+app's own repo, add a workflow that builds on push to the default branch and
+pushes both `:latest` and `:<git-sha>` to `ghcr.io/namanvashistha/<name>`. The
+sha tag is the rollback handle; `latest` alone cannot be rolled back to
+anything. Then make the ghcr package public, or give Komodo a read-only PAT — a
+private package fails the deploy with an auth error that looks nothing like the
+cause.
 
-[stack.config]
-server = "Local"
-git_provider = "github.com"
-repo = "namanvashistha/thing"
-branch = "main"
-file_paths = ["docker-compose.yml"]
-run_build = true      # builds from a Dockerfile in-tree
-auto_pull = false     # MUST be false when run_build is true
-poll_for_updates = false
-```
+**Both kinds** — two files, though for a project they are in two repos:
 
-Push. The poller picks it up within ten minutes. The app's own compose carries
-its `caddy:` label and joins the external `caddy` network, so routing
-configures itself — nothing to add here or in Cloudflare.
+- the compose — `docker-compose.homelab.yaml` in the app's repo, or
+  `services/<name>.yml` here
+- a block in the matching `komodo/syncs/*.toml`, copied from the template at the
+  top of it
 
-**Something off the shelf, no repo of its own** — two files: the compose at
-`services/<name>.yml`, and a block in `komodo/syncs/services.toml` copied from
-the template at the top of it. Each service is its own stack, so a bad image in
-one cannot fail the others' deploys.
+Each is its own stack, so a bad image in one cannot fail the others' deploys.
+
+Push. The poller picks it up within ten minutes. The compose carries its own
+`caddy:` label and joins the external `caddy` network, so routing configures
+itself — nothing to add here or in Cloudflare.
 
 Two rules for the compose: `expose:` plus caddy labels, never `ports:` (a host
 port bypasses Cloudflare Access), and named volumes, never `./data` (Komodo
-clones the repo, so a relative path anchors wherever the clone landed).
+clones the repo, so a relative path anchors wherever the clone landed). A
+relative mount of a file that is *in* that repo — foodly's `./setup.sql` — is
+fine, because the clone is exactly where it lives.
 
-These run published images, so unlike the app stacks `auto_pull = true` and
-`poll_for_updates = true` are correct here.
+Everything runs a published image, mine or a vendor's, so `run_build = false`,
+`auto_pull = true` and `poll_for_updates = true` are correct either way.
+`auto_update` stays off until a given stack has proved stable.
 
 **Secrets** go in Komodo (Settings → Variables), never in this repo, and are
 referenced as `[[NAME]]` from a stack's `environment`. Komodo writes them to a
@@ -160,8 +173,13 @@ Mongo. Their security is the database's security.
 
 ## Conventions worth keeping
 
-- **`auto_pull = false` whenever `run_build = true`.** `compose pull` fails
-  outright on a locally built image. CI checks this.
+- **The box does not build.** Images come from ghcr.io, built by the app repo's
+  own CI. If anything ever sets `run_build = true` again it must also set
+  `auto_pull = false`, because `compose pull` fails outright on a locally built
+  image — CI checks that pairing.
+- **A stack sourced from this repo must name a compose file that exists.**
+  CI resolves `run_directory` + `file_paths` against the checkout, so a typo
+  fails there rather than as a failed deploy ten minutes after a push.
 - **One compose file owns one concern.** One stack per thing that can fail on
   its own — that is what lets Komodo redeploy one without touching the rest.
 - **Named volumes, not *relative* bind mounts,** in any compose file Komodo
