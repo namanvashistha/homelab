@@ -220,34 +220,21 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # host process visibility, for the system stats in the UI
       - /proc:/proc
-      # Hides the host's ZFS ARC from Periphery, which is what makes the Memory
-      # graph read a real number instead of 0.00 GB on this box.
       #
-      # bin/periphery/src/stats/mem.rs computes:
-      #     used = (MemTotal - MemAvailable) - zfs_arc      [saturating_sub]
-      # and reads zfs_arc unconditionally from the path below, defaulting to 0
-      # when the file cannot be read.
+      # DO NOT try to mask the ZFS ARC by mounting over a path in here. It was
+      # tried, and runc refuses:
       #
-      # This host is an unprivileged Proxmox LXC. lxcfs virtualises
-      # /proc/meminfo, so MemTotal and MemAvailable describe THIS GUEST (1 GiB).
-      # /proc/spl/kstat/zfs/arcstats is not virtualised, so zfs_arc describes
-      # the PROXMOX HOST and is several GiB. Subtracting a host-sized ARC from a
-      # guest-sized total goes negative, saturates at zero, and pins the graph
-      # there forever.
+      #   error mounting "/dev/null" to rootfs at "/proc/spl/kstat/zfs/arcstats":
+      #   create mountpoint ... cannot be mounted because it is inside /proc
       #
-      # /dev/null reads as empty, no `size` line is found, and zfs_arc becomes
-      # 0 — which is not merely a workaround but the truthful answer from in
-      # here: the host's page cache is not this guest's memory.
+      # Modern runc will not create a NEW mountpoint anywhere under /proc — a
+      # deliberate hardening, not a bug, and it does not care what the source
+      # is. Periphery then fails to start, which takes Komodo's ability to
+      # deploy anything with it. Recovery is deleting the line and re-running
+      # this script, which is the only reason it was cheap to find out.
       #
-      # LOAD-BEARING. Delete this line and the Memory graph silently returns to
-      # 0.00 GB, and because 0 never crosses a threshold, the memory alerts
-      # enabled in komodo/syncs/infra.toml stop firing without ever failing.
-      #
-      # If Periphery does not start after a deploy.sh run, suspect this first:
-      # the mount requires the path to exist in the host's /proc, which it does
-      # only while the ZFS module is loaded. Remove the line and re-run
-      # deploy.sh to recover.
-      - /dev/null:/proc/spl/kstat/zfs/arcstats:ro
+      # The goal was to make Periphery report real memory instead of 0.00 GB.
+      # See komodo/syncs/infra.toml for where that stands.
       # Every stack Komodo clones and every compose file it runs lives here.
       - /etc/komodo:/etc/komodo
     # No caddy network: nothing should reach the agent except Core.

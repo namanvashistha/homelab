@@ -50,40 +50,41 @@ send_cpu_alerts = true
 cpu_warning = 90.0
 cpu_critical = 98.0
 
-# Memory alerts ON, but ONLY because bootstrap/docker-compose.yml masks the
-# host's ZFS ARC from Periphery. Read that before touching these.
+# Memory alerts OFF. The Memory graph reads 0.00 GB, and a threshold against a
+# number pinned at zero can never fire, so turning these on would be theatre.
 #
-# The Memory graph used to read 0.00 GB no matter the real usage, and an
-# earlier note here blamed ZFS ARC being double-counted in MemAvailable. That
-# was the wrong diagnosis. The real cause was a SCOPE MISMATCH, confirmed
-# against bin/periphery/src/stats/mem.rs:
+# WHAT IS KNOWN, from bin/periphery/src/stats/mem.rs:
 #
 #   used = (MemTotal - MemAvailable) - zfs_arc      [saturating_sub]
 #
-#   This box is an unprivileged Proxmox LXC. lxcfs virtualises /proc/meminfo,
-#   so MemTotal and MemAvailable describe THIS GUEST — 1 GiB.
-#   /proc/spl/kstat/zfs/arcstats is not virtualised, so zfs_arc describes the
-#   PROXMOX HOST and is several GiB. Guest-sized minus host-sized goes
-#   negative, saturates at zero, and pins the graph there.
+# with zfs_arc read from /proc/spl/kstat/zfs/arcstats, defaulting to 0 when
+# that file cannot be read. A saturating subtraction is exactly how a graph
+# gets pinned at zero, so an ARC larger than used memory is the obvious
+# suspect: this box is an unprivileged Proxmox LXC, lxcfs virtualises
+# /proc/meminfo to this guest's 1 GiB, and arcstats is not virtualised and
+# reports the Proxmox host's multi-GiB ARC. Guest minus host, floored at zero.
 #
-# The fix is a one-line mount in bootstrap: /dev/null over the arcstats path,
-# so Periphery reads no ARC and reports (MemTotal - MemAvailable) — which is
-# the correct figure for a guest, since the host's page cache was never this
-# guest's memory.
+# WHAT IS NOT YET CONFIRMED: that Periphery can see arcstats at all. The
+# attempted fix — mounting /dev/null over that path — was rejected by runc
+# before the container started, so it proved nothing either way. If the file is
+# NOT visible in there, zfs_arc is already 0 and the zero comes from somewhere
+# else entirely.
 #
-# THE COUPLING IS SILENT AND WORTH KNOWING. If that mount is ever removed, the
-# graph returns to 0.00 GB, and because 0 never crosses a threshold these
-# alerts stop firing WITHOUT ever failing. Nothing turns red. Cross-check
-# against Proxmox, which measures this guest from outside and is always right,
-# if the memory graph ever looks suspiciously calm.
+# The two commands that settle it, once Periphery is running:
+#   docker exec komodo-periphery head -3 /proc/meminfo
+#   docker exec komodo-periphery grep '^size' /proc/spl/kstat/zfs/arcstats
 #
-# Thresholds: 1 GiB total, and this box idles around 55% with swap already in
-# use, so 80% is genuinely close rather than theoretical. Expect these to fire
-# until either the guest gets more RAM or the workload shrinks — that is the
-# alert doing its job, not noise.
-send_mem_alerts = true
-mem_warning = 80.0
-mem_critical = 90.0
+#   guest-scale meminfo + host-scale ARC  -> diagnosis confirmed
+#   arcstats missing or unreadable        -> diagnosis wrong, look elsewhere
+#
+# Masking the file is a dead end regardless (see bootstrap/docker-compose.yml).
+# The remaining candidates are dropping the /proc:/proc mount so Periphery uses
+# the container's own procfs, at the cost of host process visibility, or moving
+# this guest to a VM where /proc is real and none of this applies.
+#
+# Meanwhile the true figure is in Proxmox, which measures this guest from the
+# outside and is correct. Read it there.
+send_mem_alerts = false
 
 # Disk alerts ON, and tightened. This is the failure mode that has actually
 # happened here: 37 GB of dead images and build cache. Six source-building
