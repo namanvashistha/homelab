@@ -42,12 +42,21 @@ services:
       - caddy_data:/data
     labels:
       # Global options for caddy-docker-proxy are read from labels on its OWN
-      # container, which is why these sit here and not in a Caddyfile.
-      caddy: ""
+      # container, which is why these sit here and not in a Caddyfile. Numbered
+      # (caddy_0, caddy_1, ...) because a second block below adds a real site.
+      caddy_0: ""
       # Cloudflare terminates TLS at its edge; this box only ever serves
       # plaintext behind the tunnel. Delete this line if it ever stops sitting
       # behind Cloudflare, so Caddy provisions its own certificates again.
-      caddy.auto_https: "off"
+      caddy_0.auto_https: "off"
+      # Catch-all: any Cloudflare hostname that reaches this box but matches no
+      # container's `caddy:` label (typo, decommissioned service, or someone
+      # probing random subdomains) used to fall through to Caddy's default
+      # handler and render as a blank 200 instead of an honest error. A
+      # host-less site address is the lowest-priority match, so every real site
+      # still wins first.
+      caddy_1: ":80"
+      caddy_1.respond: "404"
       # Exempt from Komodo's StopAllContainers. Stopping the proxy takes every
       # site on the box down at once, which is never what that button meant.
       komodo.skip:
