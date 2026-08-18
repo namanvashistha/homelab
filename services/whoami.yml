@@ -11,17 +11,16 @@
 services:
   whoami:
     image: traefik/whoami
-    container_name: whoami
+    # container_name: whoami
     restart: unless-stopped
-    # No `ports:`. Ingress is cloudflared -> caddy; a host port would publish
-    # this to the LAN and bypass Cloudflare Access.
-    expose:
-      - "80"
+    deploy:
+      replicas: 2
+    expose: ["80"]
     networks: [caddy]
     labels:
-      # http:// scheme required — Caddy runs auto_https=off behind Cloudflare
       caddy: http://whoami.namanvashistha.com
       caddy.reverse_proxy: "{{upstreams 80}}"
+      caddy.reverse_proxy.lb_policy: round_robin   # default is random
     healthcheck:
       # The image is scratch-based: no shell, no wget, no curl. Its own binary
       # is the only thing that can run, and `--help`-style flags exit non-zero,
