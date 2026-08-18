@@ -22,7 +22,7 @@
 # No address: empty means Periphery dials Core, which is how they're wired.
 [[server]]
 name = "Local"
-description = "The box. \n docker run --rm -it --privileged --pid=host --net=host ubuntu nsenter -t 1 -m -u -i -n -p -- bash"
+description = "The box. docker run --rm -it --privileged --pid=host --net=host ubuntu nsenter -t 1 -m -u -i -n -p -- bash"
 
 # Which alerts this server raises. Where they go is the `slack` alerter at the
 # bottom of this file — without an enabled alerter these are computed and
