@@ -34,6 +34,9 @@ Applying changes (on the host, over ssh — never from this checkout):
 bash ~/homelab/bootstrap/deploy.sh   # layer 1 only; idempotent, root required
 ```
 
+That also installs and restarts `periphery.service`. It needs `python3`
+(upstream's installer is a python script) and installs it on Debian if absent.
+
 Layer 2 needs nothing: push to `main`, and the `sync-and-deploy` procedure
 applies it within ten minutes. To skip the wait: Komodo UI → Procedures →
 `sync-and-deploy` → Run.
@@ -44,11 +47,19 @@ applies it within ten minutes. To skip the wait: Komodo UI → Procedures →
 
 That constraint decides which file a change belongs in.
 
-**Layer 1 — `bootstrap/`.** caddy, cloudflared, komodo-mongo, komodo-core,
-komodo-periphery. Applied only by running `deploy.sh` on the host. Editing
+**Layer 1 — `bootstrap/`.** caddy, cloudflared, komodo-mongo, komodo-core in
+`docker-compose.yml`, plus `periphery.service` installed on the host by
+`deploy.sh`. Applied only by running `deploy.sh` on the host. Editing
 `bootstrap/docker-compose.yml` and pushing changes nothing. Periphery is the
-process that runs `docker compose`, so it cannot recreate itself; that is why
-this layer is manual and why it must stay at five services.
+process that runs `docker compose`, so it cannot recreate itself or the Core it
+reports to; that is why this layer is manual and why it must stay at four
+containers.
+
+Periphery is native rather than containerised because in a container it read
+the wrong cgroup for memory (server graph pinned at 0.00 GB) and its terminal
+opened inside the container. Consequences: Core publishes `127.0.0.1:9120` so
+the agent can dial it, and a fresh box needs one pairing step —
+`PERIPHERY_ONBOARDING_KEY=O-... bash bootstrap/deploy.sh`.
 
 **Layer 2 — `komodo/syncs/*.toml`.** Everything else. Komodo reads the whole
 directory (recursively), diffs against reality, applies. Split by kind:

@@ -19,8 +19,9 @@ one.
 
 ```
 bootstrap/          Layer 1 — run on the host, by hand, rarely
-  deploy.sh           installs docker, creates the caddy network, runs the below
-  docker-compose.yml  caddy, cloudflared, komodo-mongo, komodo-core, komodo-periphery
+  deploy.sh           installs docker + periphery.service, makes the caddy network,
+                      runs the below
+  docker-compose.yml  caddy, cloudflared, komodo-mongo, komodo-core
   .env.example        the only secrets file on the box (5 values)
 
 services/           Layer 2 — compose files for off-the-shelf apps
@@ -50,12 +51,25 @@ what filled the disk with dangling images.
 
 ### Layer 1: bootstrap
 
-Five services, listed above, and nothing else qualifies.
+Four containers, listed above, plus `periphery.service` on the host.
 
 These are the one thing Komodo does not apply for you, and it is not an
-oversight: `komodo-periphery` is the process that runs `docker compose up`, so
-a run that recreates Periphery kills the command mid-flight. Something outside
-Komodo has to own them.
+oversight: Periphery is the process that runs `docker compose up`, so a run
+that recreates Core kills the UI it is reporting to, and a run that restarts
+Periphery kills the command mid-flight. Something outside Komodo has to own
+them.
+
+**Periphery is a systemd unit, not a container.** In a container it reported
+~10 MiB of server memory (lxcfs answers `/proc/meminfo` for the reading
+process's cgroup) and its Komodo terminal opened inside the container instead
+of on the box. Native, both are right — see the memory note in `infra.toml`.
+The cost is that Core must publish `127.0.0.1:9120` for the agent to dial, and
+that pairing is one manual step on a fresh box:
+
+```bash
+# Komodo -> Servers -> onboarding key, then on the host:
+PERIPHERY_ONBOARDING_KEY=O-... bash ~/homelab/bootstrap/deploy.sh
+```
 
 That something is you, occasionally:
 
@@ -71,7 +85,7 @@ those are exactly the changes worth watching rather than waking up to.
 There *is* a way to automate it (a one-shot in its own compose project, which
 recreates Core and Periphery from outside the blast radius). It was built here
 and then removed: it worked, but its exit code is invisible to Komodo, so a
-failed apply looks identical to a successful one. Not a good trade for five
+failed apply looks identical to a successful one. Not a good trade for four
 containers that change twice a year. `git log` has it if you want it back.
 
 ### Layer 2: Komodo
@@ -225,6 +239,7 @@ The alert types it forwards, and why each earns a Slack message:
 
 - `ServerUnreachable` — the box or Periphery is gone. The one that matters.
 - `ServerDisk` — 80% warning, 90% critical, set in `infra.toml`.
+- `ServerMem` — 85/95, usable since Periphery went native.
 - `StackStateChange` — an app went down, unhealthy, or recovered.
 - `ProcedureFailed` — the poller broke, so git and reality have stopped
   converging. Otherwise silent, and easy to miss for days.
@@ -236,9 +251,10 @@ The alert types it forwards, and why each earns a Slack message:
 - `BuildFailed` — only once Builds are in use.
 - `Test` — so the alerter's Test button actually proves the path end to end.
 
-Deliberately **not** enabled, with the reasoning recorded in `infra.toml`: CPU
-alerts (six stacks build from source; every deploy pegs the CPU) and memory
-alerts (ZFS makes Periphery report 0.00 GB used, so no threshold can trigger).
+Everything in `[server.config]` is on. CPU alerts were off while six stacks
+built from source here, and memory alerts were off while Periphery ran in a
+container and reported 0.00 GB used; builds moved to CI and Periphery moved to
+systemd, so both are back. The reasoning is recorded in `infra.toml`.
 
 Use the alerter's Test button before trusting any of it.
 
@@ -263,7 +279,10 @@ Use the alerter's Test button before trusting any of it.
   signature itself, so the bypass is safe.
 - **Disaster recovery:** losing the `komodo-mongo-data` volume loses users and
   history, not the stacks — re-run `deploy.sh`, recreate the `homelab` sync,
-  Execute, and everything comes back. Losing `komodo-keys` breaks Core↔Periphery
-  trust until both containers are recreated together. The secrets in
+  Execute, and everything comes back. Core↔Periphery trust is a keypair —
+  Core's in the `komodo-keys` volume, Periphery's under `/etc/komodo/keys`,
+  paired via an onboarding key and recorded in mongo. Lose either side and you
+  re-pair with a fresh onboarding key; the `deploy.sh` line above is the whole
+  procedure. The secrets in
   `bootstrap/.env` and Komodo's Variables are the only things not reproducible
   from this repo. Back those up separately.

@@ -1,4 +1,4 @@
-# The trust base. Five services, and the rule that decides membership:
+# The trust base. Four services, and the rule that decides membership:
 #
 #   Anything Komodo needs in order to run cannot be deployed BY Komodo.
 #
@@ -6,6 +6,10 @@
 # cannot serve you a UI through a proxy it just restarted. So the proxy, the
 # tunnel, and Komodo itself live here, brought up by bootstrap/deploy.sh.
 # Everything else on this box is a Komodo stack — see ../README.md.
+#
+# Periphery is NOT here: it runs as a systemd unit on the host, installed by
+# deploy.sh. In a container its stats read the wrong cgroup and its terminal is
+# the container's, not the box's — see komodo/syncs/infra.toml.
 #
 # Consequence worth accepting up front: nothing auto-updates this file's
 # services. Changing them means editing this repo and re-running deploy.sh on
@@ -153,10 +157,10 @@ services:
       - KOMODO_HOST=${KOMODO_HOST:-https://komodo.namanvashistha.com}
       - KOMODO_TITLE=Homelab
       # -- Core <-> Periphery trust --
-      # A keypair generated on first boot into the shared `komodo-keys` volume.
-      # Lose that volume and the two stop trusting each other until BOTH are
-      # recreated together.
-      - KOMODO_PERIPHERY_PUBLIC_KEY=file:/config/keys/periphery.pub
+      # No KOMODO_PERIPHERY_PUBLIC_KEY: Periphery is no longer a container
+      # sharing this volume, so there is no file to point at. It presents an
+      # onboarding key on first connect instead, and Core stores its pubkey in
+      # mongo. Core's own keypair still lives in `komodo-keys`.
       # -- login --
       - KOMODO_LOCAL_AUTH=true
       - KOMODO_INIT_ADMIN_USERNAME=${KOMODO_ADMIN_USERNAME:-admin}
@@ -185,9 +189,12 @@ services:
       # Dated database dumps, on the host rather than in a volume so they
       # survive `docker volume prune` — the exact accident they exist for.
       - /etc/komodo/backups:/backups
-    # No host ports: ingress is cloudflared -> caddy. Upstream's compose
-    # publishes 9120, which would also put an admin panel holding the docker
-    # socket on the LAN.
+    # Loopback only. Periphery runs on the host now and dials Core, so it needs
+    # a reachable address — `komodo-core` resolves on the docker network only.
+    # 127.0.0.1 keeps it off the LAN; browser ingress is still cloudflared ->
+    # caddy, which reaches this over the docker network.
+    ports:
+      - "127.0.0.1:9120:9120"
     expose:
       - "9120"
     # The only service bridging both networks.
@@ -195,60 +202,6 @@ services:
     labels:
       caddy: ${KOMODO_HOST:-http://komodo.namanvashistha.com}
       caddy.reverse_proxy: "{{upstreams 9120}}"
-      komodo.skip:
-
-  # Periphery is the agent that actually touches docker. Core never does — it
-  # sends instructions here. One agent per managed host; a second box would run
-  # only this service, pointed at this Core.
-  komodo-periphery:
-    image: ghcr.io/moghtech/komodo-periphery:${KOMODO_IMAGE_TAG:-2}
-    container_name: komodo-periphery
-    init: true
-    restart: unless-stopped
-    depends_on:
-      - komodo-core
-    environment:
-      - PERIPHERY_CORE_ADDRESS=ws://komodo-core:9120
-      # Must equal the Server name Core created, or Core has nothing to attach
-      # this agent to and the server shows Disabled. Same variable feeds
-      # KOMODO_FIRST_SERVER_NAME above so the two cannot drift.
-      - PERIPHERY_CONNECT_AS=${KOMODO_SERVER_NAME:-Local}
-      - PERIPHERY_CORE_PUBLIC_KEYS=file:/config/keys/core.pub
-      # Same path inside and outside the container, and that is load-bearing:
-      # Periphery shells out to `docker compose` against the HOST daemon, so
-      # every path it passes has to resolve identically on both sides.
-      # https://github.com/moghtech/komodo/discussions/180
-      - PERIPHERY_ROOT_DIRECTORY=/etc/komodo
-      # Without this the host disk reads as the sum of every mount Periphery
-      # can see. /etc/hostname resolves to the real root filesystem.
-      - PERIPHERY_INCLUDE_DISK_MOUNTS=/etc/hostname
-      - TZ=${TZ:-Asia/Kolkata}
-    volumes:
-      - komodo-keys:/config/keys
-      # read-write: this is the service that creates and destroys containers
-      - /var/run/docker.sock:/var/run/docker.sock
-      # host process visibility, for the system stats in the UI
-      - /proc:/proc
-      #
-      # DO NOT try to mask the ZFS ARC by mounting over a path in here. It was
-      # tried, and runc refuses:
-      #
-      #   error mounting "/dev/null" to rootfs at "/proc/spl/kstat/zfs/arcstats":
-      #   create mountpoint ... cannot be mounted because it is inside /proc
-      #
-      # Modern runc will not create a NEW mountpoint anywhere under /proc — a
-      # deliberate hardening, not a bug, and it does not care what the source
-      # is. Periphery then fails to start, which takes Komodo's ability to
-      # deploy anything with it. Recovery is deleting the line and re-running
-      # this script, which is the only reason it was cheap to find out.
-      #
-      # The goal was to make Periphery report real memory instead of 0.00 GB.
-      # See komodo/syncs/infra.toml for where that stands.
-      # Every stack Komodo clones and every compose file it runs lives here.
-      - /etc/komodo:/etc/komodo
-    # No caddy network: nothing should reach the agent except Core.
-    networks: [komodo]
-    labels:
       komodo.skip:
 
 networks:
@@ -268,8 +221,8 @@ networks:
 volumes:
   komodo-mongo-data:
   komodo-mongo-config:
-  # The Core <-> Periphery keypair. Deleting this breaks trust between them
-  # until BOTH containers are recreated.
+  # Core's keypair. Periphery's lives on the host at /etc/komodo/keys, and the
+  # trust between them is recorded in mongo — see deploy.sh.
   komodo-keys:
   # Caddy's state (certificates, if auto_https is ever turned back on).
   # External for the same reason as the network above.

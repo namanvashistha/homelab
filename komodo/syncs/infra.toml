@@ -22,7 +22,7 @@
 # No address: empty means Periphery dials Core, which is how they're wired.
 [[server]]
 name = "Local"
-description = "The box. docker run --rm -it --privileged --pid=host --net=host ubuntu nsenter -t 1 -m -u -i -n -p -- bash"
+description = "The box."
 
 # Which alerts this server raises. Where they go is the `slack` alerter at the
 # bottom of this file — without an enabled alerter these are computed and
@@ -41,24 +41,28 @@ send_cpu_alerts = true
 cpu_warning = 80.0
 cpu_critical = 90.0
 
-# OFF: the graph is pinned at 0.00 GB, so a threshold cannot fire. Two scope
-# mismatches, either one sufficient (bin/periphery/src/stats/mem.rs computes
-# used = (MemTotal - MemAvailable) - zfs_arc, saturating):
+# ON since Periphery became a systemd unit on the host (bootstrap/deploy.sh).
+# Containerised, it read two wrong numbers at once and the graph sat at 0.00 GB
+# (bin/periphery/src/stats/mem.rs: used = (MemTotal - MemAvailable) - zfs_arc,
+# saturating):
 #
-#   1. lxcfs virtualises /proc/meminfo but not arcstats, so a 1.55 GiB HOST ARC
-#      is subtracted from a 485 MiB GUEST figure. Floors at zero.
-#   2. lxcfs answers per reading process's cgroup, so Periphery in a container
-#      measures itself: 3.3 MiB used, not 485 MiB. Wrong even if 1 were fixed.
+#   1. lxcfs answers /proc/meminfo per the READING process's cgroup, so
+#      Periphery measured itself — ~10 MiB, not the box's ~460 MiB.
+#   2. arcstats is not virtualised, so the Proxmox host's ZFS ARC was
+#      subtracted from that guest figure. Floors at zero.
 #
-# Masking arcstats is impossible — runc refuses to create a mountpoint under
-# /proc, and Periphery then fails to start (see bootstrap/docker-compose.yml).
-# Fixes that would work: native Periphery via systemd plus
-# InaccessiblePaths=/proc/spl, or a VM. Neither earns its cost here.
+# Native Periphery fixes 1 (root cgroup) and the unit's
+# InaccessiblePaths=-/proc/spl fixes 2. Both are needed; either alone still
+# reads zero.
 #
-# Filed with a patch: https://github.com/moghtech/komodo/issues/1139
-# Meanwhile: per-container memory in Komodo IS correct (cgroup stats, not
-# /proc), and the server total is in Proxmox.
-send_mem_alerts = false
+# 80/90, same as CPU and disk: 1 GiB box, so it idles around half full and the
+# 75/95 defaults would both nag early and warn late.
+#
+# Still broken for anyone running Periphery in a container:
+# https://github.com/moghtech/komodo/issues/1139
+send_mem_alerts = true
+mem_warning = 80.0
+mem_critical = 90.0
 
 # Disk alerts ON, and tightened. This is the failure mode that has actually
 # happened here: 37 GB of dead images and build cache. Six source-building
