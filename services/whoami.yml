@@ -11,10 +11,8 @@
 services:
   whoami:
     image: traefik/whoami
-    # container_name: whoami
+    container_name: whoami
     restart: unless-stopped
-    deploy:
-      replicas: 10
     expose: ["80"]
     networks: [caddy]
     labels:
@@ -22,10 +20,6 @@ services:
       caddy.reverse_proxy: "{{upstreams 80}}"
       caddy.reverse_proxy.lb_policy: round_robin   # default is random
     healthcheck:
-      # The image is scratch-based: no shell, no wget, no curl. Its own binary
-      # is the only thing that can run, and `--help`-style flags exit non-zero,
-      # so there is nothing sane to probe with. Komodo reports container state
-      # regardless; the caddy route is the real health signal here.
       disable: true
 
 networks:
