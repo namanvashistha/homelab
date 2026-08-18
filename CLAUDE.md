@@ -60,7 +60,8 @@ Periphery is native rather than containerised because in a container it read
 the wrong cgroup for memory (server graph pinned at 0.00 GB) and its terminal
 opened inside the container. Consequences: Core publishes `127.0.0.1:9120` so
 the agent can dial it, and a fresh box needs one pairing step —
-`PERIPHERY_ONBOARDING_KEY=O-... bash bootstrap/deploy.sh`.
+`bash bootstrap/deploy.sh --onboarding-key O-...` (a flag, because sudo's
+`env_reset` drops the equivalent env var out of the piped install).
 
 **Layer 2 — `komodo/syncs/*.toml`.** Everything else. Komodo reads the whole
 directory (recursively), diffs against reality, applies. Split by kind:

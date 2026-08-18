@@ -68,8 +68,13 @@ that pairing is one manual step on a fresh box:
 
 ```bash
 # Komodo -> Servers -> onboarding key, then on the host:
-PERIPHERY_ONBOARDING_KEY=O-... bash ~/homelab/bootstrap/deploy.sh
+bash ~/homelab/bootstrap/deploy.sh --onboarding-key O-...
 ```
+
+A flag rather than an env var because the documented install is
+`curl ... | sudo bash`, and sudo's `env_reset` silently drops the variable —
+the run looks like it worked and the agent stays unpaired. Piped, it is
+`| sudo bash -s -- -k O-...`.
 
 That something is you, occasionally:
 

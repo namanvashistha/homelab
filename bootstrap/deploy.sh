@@ -136,7 +136,7 @@ EOF
             >>/etc/komodo/periphery.config.toml
     elif ! grep -q '^onboarding_key = ' /etc/komodo/periphery.config.toml; then
         log "note: agent unpaired. Komodo -> Servers -> onboarding key, then"
-        log "      PERIPHERY_ONBOARDING_KEY=O-... bash \$0"
+        log "      bash $BASE_DIR/bootstrap/deploy.sh --onboarding-key O-..."
     fi
 
     # WantedBy=default.target matches upstream's unit.
@@ -164,7 +164,25 @@ EOF
     systemctl restart periphery
 }
 
+# --onboarding-key rather than only the env var: the documented install is
+# `curl ... | sudo bash`, and sudo's env_reset drops the variable on the way
+# through. A flag survives the pipe — pass it as `| sudo bash -s -- -k O-...`.
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --onboarding-key|-k)
+                [ $# -ge 2 ] || fail "$1 needs a value"
+                PERIPHERY_ONBOARDING_KEY="$2"
+                shift 2
+                ;;
+            *) fail "unknown argument: $1" ;;
+        esac
+    done
+}
+
 main() {
+    parse_args "$@"
+
     [ "$(id -u)" -eq 0 ] || fail "run as root (docker install + /etc/komodo)"
 
     install_docker
