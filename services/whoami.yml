@@ -14,7 +14,7 @@ services:
     # container_name: whoami
     restart: unless-stopped
     deploy:
-      replicas: 2
+      replicas: 10
     expose: ["80"]
     networks: [caddy]
     labels:
