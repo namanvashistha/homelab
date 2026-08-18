@@ -84,43 +84,79 @@ ensure_shared_resources() {
 # the server's memory reads ~10 MiB; and the Komodo terminal lands in the
 # container rather than on the box. See komodo/syncs/infra.toml.
 #
-# Idempotent: the installer is skipped once the binary exists, but the drop-in
-# and the unit state are reasserted every run.
+# Upstream installs this with scripts/setup-periphery.py. Inlined here instead:
+# it is four curls and a heredoc, it was the only thing on this box that needed
+# python, and its write_config() early-returns on an existing file — so passing
+# an onboarding key to an already-installed agent silently did nothing.
 install_periphery() {
-    if ! command -v python3 &>/dev/null; then
-        log "installing python3 (the periphery installer is a python script)"
-        apt-get update -qq && apt-get install -y -qq python3
+    local version arch tmp
+    version="${KOMODO_PERIPHERY_VERSION:-}"
+    if [ -z "$version" ]; then
+        version=$(curl -fsSL https://api.github.com/repos/moghtech/komodo/releases/latest \
+            | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)
+        [ -n "$version" ] || fail "could not resolve the latest periphery version"
     fi
 
-    local server_name
-    server_name=$(sed -n 's/^KOMODO_SERVER_NAME=//p' "$ENV_FILE" | tail -1)
-    server_name="${server_name:-Local}"
+    case "$(uname -m)" in
+        aarch64|arm64) arch=aarch64 ;;
+        *)             arch=x86_64 ;;
+    esac
 
-    # Re-run on a key too: the installer writes it into periphery.config.toml,
-    # so pairing a box that already has the binary goes through here.
-    if [ ! -x /usr/local/bin/periphery ] || [ -n "${PERIPHERY_ONBOARDING_KEY:-}" ]; then
-        log "installing periphery (systemd)"
-        # Core publishes 9120 on loopback for exactly this. Periphery dials
-        # Core, so the Server in infra.toml carries no address.
-        curl -fsSL "$PERIPHERY_SETUP_URL" | python3 - \
-            --core-address "ws://127.0.0.1:9120" \
-            --connect-as "$server_name" \
-            ${PERIPHERY_ONBOARDING_KEY:+--onboarding-key "$PERIPHERY_ONBOARDING_KEY"} \
-            ${KOMODO_PERIPHERY_VERSION:+--version "$KOMODO_PERIPHERY_VERSION"} \
-            || fail "periphery install failed"
-    elif ! grep -q '^onboarding_key' /etc/komodo/periphery.config.toml 2>/dev/null; then
+    # Downloaded every run, so `deploy.sh` is also how the agent gets updated —
+    # Core is pinned by KOMODO_IMAGE_TAG and a drift raises ServerVersionMismatch.
+    # Staged in a temp file so a failed download cannot leave a truncated binary.
+    log "installing periphery $version ($arch)"
+    tmp=$(mktemp)
+    curl -fsSL "https://github.com/moghtech/komodo/releases/download/$version/periphery-$arch" \
+        -o "$tmp" || fail "periphery $version download failed — check the tag exists"
+    chmod +x "$tmp"
+    mv "$tmp" /usr/local/bin/periphery
+
+    # Written once. Everything else takes the binary's defaults; these three
+    # are the ones that are wrong by default here.
+    mkdir -p /etc/komodo
+    if [ ! -f /etc/komodo/periphery.config.toml ]; then
+        local server_name
+        server_name=$(sed -n 's/^KOMODO_SERVER_NAME=//p' "$ENV_FILE" | tail -1)
+        cat >/etc/komodo/periphery.config.toml <<EOF
+# Written by bootstrap/deploy.sh. Periphery dials Core, which is why the Server
+# in komodo/syncs/infra.toml carries no address — and why Core publishes 9120
+# on loopback.
+root_directory = "/etc/komodo"
+core_address = "ws://127.0.0.1:9120"
+connect_as = "${server_name:-Local}"
+EOF
+    fi
+
+    # Pairing. Core learns this agent's public key from the onboarding key and
+    # stores it in mongo, so this is needed once per box, not once per run.
+    if [ -n "${PERIPHERY_ONBOARDING_KEY:-}" ]; then
+        sed -i '/^onboarding_key = /d' /etc/komodo/periphery.config.toml
+        echo "onboarding_key = \"$PERIPHERY_ONBOARDING_KEY\"" \
+            >>/etc/komodo/periphery.config.toml
+    elif ! grep -q '^onboarding_key = ' /etc/komodo/periphery.config.toml; then
         log "note: agent unpaired. Komodo -> Servers -> onboarding key, then"
         log "      PERIPHERY_ONBOARDING_KEY=O-... bash \$0"
     fi
 
-    # stats/mem.rs subtracts the ZFS ARC from used memory and saturates at zero.
-    # Inside an LXC that ARC is the Proxmox host's, so the graph pinned at
-    # 0.00 GB. Hiding the file makes it read 0 and the subtraction a no-op.
-    # Leading `-` so a non-ZFS host does not fail to start.
-    mkdir -p /etc/systemd/system/periphery.service.d
-    cat >/etc/systemd/system/periphery.service.d/override.conf <<'EOF'
+    # WantedBy=default.target matches upstream's unit.
+    cat >/etc/systemd/system/periphery.service <<'EOF'
+[Unit]
+Description=Agent to connect with Komodo Core
+
 [Service]
+Environment="HOME=/root"
+ExecStart=/usr/local/bin/periphery --config-path /etc/komodo/periphery.config.toml
+Restart=on-failure
+TimeoutStartSec=0
+# stats/mem.rs subtracts the ZFS ARC from used memory and saturates at zero.
+# Inside an LXC that ARC is the Proxmox host's, so the graph pinned at 0.00 GB.
+# Hiding the file makes the read fail and the subtraction a no-op. Leading `-`
+# so a host without ZFS still starts.
 InaccessiblePaths=-/proc/spl
+
+[Install]
+WantedBy=default.target
 EOF
 
     systemctl daemon-reload

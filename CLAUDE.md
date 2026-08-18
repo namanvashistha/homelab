@@ -34,8 +34,9 @@ Applying changes (on the host, over ssh — never from this checkout):
 bash ~/homelab/bootstrap/deploy.sh   # layer 1 only; idempotent, root required
 ```
 
-That also installs and restarts `periphery.service`. It needs `python3`
-(upstream's installer is a python script) and installs it on Debian if absent.
+That also installs and restarts `periphery.service` — the binary is fetched
+from the Komodo release matching `KOMODO_PERIPHERY_VERSION` (default: latest),
+so re-running it is how the agent gets updated.
 
 Layer 2 needs nothing: push to `main`, and the `sync-and-deploy` procedure
 applies it within ten minutes. To skip the wait: Komodo UI → Procedures →
