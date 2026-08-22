@@ -150,6 +150,13 @@ auto_pull = true
 poll_for_updates = true
 auto_update = true
 webhook_enabled = false
+# The lichess-bot service plays the engine on lichess.org and needs a bot:play
+# token. Its compose declares it `:?` rather than defaulting, so a missing
+# variable fails at `compose config` instead of deploying a bot that 401s on
+# every request and still looks healthy.
+environment = """
+LICHESS_API_TOKEN=[[LICHESS_API_TOKEN]]
+"""
 
 [[stack]]
 name = "foodly"
