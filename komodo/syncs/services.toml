@@ -117,9 +117,9 @@ poll_for_updates = true
 # still true, so the next redeploy for any reason takes the newer image.
 auto_update = false
 webhook_enabled = false
-# Caddy reaches the host-network UI at an explicit address. Set HOST_ADDR to
-# the box's LAN IP (Settings -> Variables) if docker0's gateway is firewalled;
-# the compose defaults to 172.17.0.1.
-environment = """
-HOST_ADDR=[[HOST_ADDR]]
-"""
+# No environment block: the compose defaults HOST_ADDR to the caddy bridge's
+# gateway, which is what caddy dials to reach the host-network UI. Override it
+# here if that subnet ever changes:
+#   environment = """
+#   HOST_ADDR=172.19.0.1
+#   """
