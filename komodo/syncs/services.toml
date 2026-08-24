@@ -117,9 +117,6 @@ poll_for_updates = true
 # still true, so the next redeploy for any reason takes the newer image.
 auto_update = false
 webhook_enabled = false
-# No environment block: the compose defaults HOST_ADDR to the caddy bridge's
-# gateway, which is what caddy dials to reach the host-network UI. Override it
-# here if that subnet ever changes:
-#   environment = """
-#   HOST_ADDR=172.19.0.1
-#   """
+# No environment block, deliberately. The caddy upstream address is a literal in
+# the compose file: a [[VAR]] reference here that Komodo cannot resolve is
+# written to the stack's .env verbatim and is not cleared on a later deploy.

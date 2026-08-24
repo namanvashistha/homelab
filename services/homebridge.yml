@@ -34,12 +34,14 @@ services:
       # container regardless of network — the membership check only gates
       # {{upstreams}} — so the route resolves from here.
       #
-      # The default is this box's caddy-bridge gateway, so no Komodo variable is
-      # needed. It only changes if the caddy network is deleted and recreated
-      # with a different subnet; re-read it and override HOST_ADDR if the UI
-      # starts 502ing:
+      # Literal, not a ${VAR}: this was a Komodo variable, and when the
+      # reference went unresolved Komodo wrote HOST_ADDR=[[HOST_ADDR]] into the
+      # stack's .env and never cleared it again — so the placeholder outlived
+      # the commit that removed it, and caddy dropped the block as an
+      # unparseable upstream. The address is the caddy bridge's gateway; re-read
+      # it and edit here if that network is ever recreated:
       #   docker network inspect caddy -f '{{(index .IPAM.Config 0).Gateway}}'
-      caddy.reverse_proxy: "${HOST_ADDR:-172.18.0.1}:8581"
+      caddy.reverse_proxy: "172.18.0.1:8581"
     volumes:
       # config.json, the plugin list, and the HomeKit pairing keys. Wiping this
       # unpairs the bridge: every device vanishes from Apple Home and every
