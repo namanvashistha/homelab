@@ -92,31 +92,3 @@ auto_pull = true
 poll_for_updates = true
 auto_update = true
 webhook_enabled = false
-
-
-[[stack]]
-name = "homebridge"
-description = "Bridges Alexa/other non-HomeKit devices into Apple Home. Host network for mDNS."
-tags = ["app"]
-deploy = true
-
-[stack.config]
-server = "Local"
-git_provider = "github.com"
-repo = "namanvashistha/homelab"
-branch = "main"
-run_directory = "services"
-file_paths = ["homebridge.yml"]
-run_build = false
-auto_pull = true
-poll_for_updates = true
-# Off, unlike every other service here. An image bump can move Node under a
-# plugin that pinned an older one, and the failure is quiet: bridge up,
-# accessory dead, "No Response" in Apple Home. Note what this does and does not
-# buy — it stops the unattended digest-triggered redeploy only. auto_pull is
-# still true, so the next redeploy for any reason takes the newer image.
-auto_update = false
-webhook_enabled = false
-# No environment block, deliberately. The caddy upstream address is a literal in
-# the compose file: a [[VAR]] reference here that Komodo cannot resolve is
-# written to the stack's .env verbatim and is not cleared on a later deploy.
