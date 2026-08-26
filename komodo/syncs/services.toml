@@ -92,3 +92,36 @@ auto_pull = true
 poll_for_updates = true
 auto_update = true
 webhook_enabled = false
+
+
+[[stack]]
+name = "bookorbit"
+description = "Self-hosted reading platform — ebooks, comics, audiobooks, Kobo/KOReader sync."
+tags = ["app"]
+deploy = true
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/homelab"
+branch = "main"
+run_directory = "services"
+file_paths = ["bookorbit.yml"]
+run_build = false
+auto_pull = true
+poll_for_updates = true
+auto_update = true
+webhook_enabled = false
+# The compose defaults each of these to its own key name, so the stack deploys
+# even before the variables exist. These references override that.
+#
+# Caveat worth knowing: an unresolved [[VAR]] is not an error. Komodo writes the
+# literal string to the stack's .env, which then WINS over the compose default
+# and is not cleared by a later deploy. So a missing variable here is worse than
+# no block at all — create all three (Settings -> Variables, mark secret) before
+# this first syncs.
+environment = """
+POSTGRES_PASSWORD=[[BOOKORBIT_POSTGRES_PASSWORD]]
+JWT_SECRET=[[BOOKORBIT_JWT_SECRET]]
+SETUP_BOOTSTRAP_TOKEN=[[BOOKORBIT_SETUP_TOKEN]]
+"""

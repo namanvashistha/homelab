@@ -37,7 +37,7 @@ send_unreachable_alerts = true
 # ON since builds moved to CI. They were off because six stacks compiled here
 # and every deploy pegged the CPU. 1-core LXC, so one busy container is the
 # whole machine — if these flap, raise the thresholds rather than disabling.
-send_cpu_alerts = false
+send_cpu_alerts = true
 cpu_warning = 80.0
 cpu_critical = 90.0
 
