@@ -28,6 +28,13 @@
 # gateway. Redeploys after that see openclaw.json already there and skip
 # straight to the gateway — this block never touches an existing config.
 #
+# The gateway also refuses proxied requests ("proxy_attribution_required")
+# until it knows which IP to trust as its reverse proxy. caddy_proxy's
+# container IP on the `caddy` network isn't fixed, so every start resolves it
+# fresh over Docker's embedded DNS and writes it to gateway.trustedProxies —
+# this only narrows rate-limit/audit attribution to the real proxy hop, it is
+# not what gates access (the gateway token is).
+#
 # Declared in ../komodo/syncs/services.toml.
 
 services:
@@ -73,6 +80,10 @@ services:
             --skip-channels \
             --no-install-daemon
           node dist/index.js models set "$$OPENCLAW_MODEL"
+        fi
+        CADDY_IP="$$(node -e "require('dns').resolve4('caddy_proxy',(e,a)=>{if(e)process.exit(1);process.stdout.write(a[0])})" 2>/dev/null)" || true
+        if [ -n "$$CADDY_IP" ]; then
+          node dist/index.js config set gateway.trustedProxies "[\"$$CADDY_IP\"]" --strict-json
         fi
         exec node dist/index.js gateway --bind lan --port 18789
     healthcheck:
