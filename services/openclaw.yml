@@ -59,6 +59,15 @@
 # still defaults to enabled: false and dmPolicy: "pairing" — open to anyone
 # who finds the bot — so both are pinned down too, every boot.
 #
+# gh (GitHub CLI) isn't in the vendor image and this repo never builds its
+# own — "the box never builds" — so it's fetched straight from GitHub's
+# releases into /home/node/.local/bin (already on PATH, no root needed) the
+# first time the container starts, using node's built-in fetch since the
+# image ships no curl/wget. Persisted on its own volume so it survives
+# restarts instead of re-downloading every boot. Best-effort: a failure here
+# (offline, GitHub unreachable, unknown arch) never blocks the gateway from
+# starting — the whole block is wrapped to swallow its own errors.
+#
 # Declared in ../komodo/syncs/services.toml.
 
 services:
@@ -85,6 +94,7 @@ services:
     volumes:
       - openclaw-state:/home/node/.openclaw
       - openclaw-auth-secrets:/home/node/.config/openclaw
+      - openclaw-local:/home/node/.local
     expose: ["18789"]
     networks: [caddy]
     labels:
@@ -123,6 +133,25 @@ services:
         node dist/index.js config set channels.telegram.dmPolicy '"allowlist"' --strict-json
         node dist/index.js config set channels.telegram.allowFrom \
           "[\"$$OPENCLAW_TELEGRAM_USER_ID\"]" --strict-json
+        (
+          set -e
+          if [ ! -x /home/node/.local/bin/gh ]; then
+            GH_ARCH=""
+            case "$$(uname -m)" in
+              x86_64) GH_ARCH=amd64 ;;
+              aarch64|arm64) GH_ARCH=arm64 ;;
+            esac
+            if [ -n "$$GH_ARCH" ]; then
+              GH_VERSION="$$(node -e "fetch('https://api.github.com/repos/cli/cli/releases/latest',{headers:{'user-agent':'openclaw-homelab'}}).then(r=>r.json()).then(j=>process.stdout.write(j.tag_name.replace(/^v/,'')))")"
+              GH_URL="https://github.com/cli/cli/releases/download/v$${GH_VERSION}/gh_$${GH_VERSION}_linux_$${GH_ARCH}.tar.gz"
+              node -e "fetch(process.argv[1]).then(r=>r.arrayBuffer()).then(b=>require('fs').writeFileSync(process.argv[2],Buffer.from(b)))" "$$GH_URL" /tmp/gh.tar.gz
+              mkdir -p /home/node/.local/bin
+              tar -xzf /tmp/gh.tar.gz -C /tmp
+              cp "/tmp/gh_$${GH_VERSION}_linux_$${GH_ARCH}/bin/gh" /home/node/.local/bin/gh
+              rm -rf /tmp/gh.tar.gz "/tmp/gh_$${GH_VERSION}_linux_$${GH_ARCH}"
+            fi
+          fi
+        ) || true
         exec node dist/index.js gateway --bind lan --port 18789
     healthcheck:
       test: ["CMD", "node", "dist/docker-healthcheck.js"]
@@ -138,3 +167,4 @@ networks:
 volumes:
   openclaw-state:
   openclaw-auth-secrets:
+  openclaw-local:
