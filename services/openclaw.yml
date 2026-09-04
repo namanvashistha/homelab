@@ -14,9 +14,19 @@
 # section) — Access and the gateway token are two independent locks, not a
 # substitute for each other.
 #
-# Model choice (OpenRouter free tier, agents.defaults.model) is set through
-# the Control UI at https://openclaw.namanvashistha.com after first deploy —
-# it lives in openclaw.json inside the state volume, not in this compose.
+# Model choice (agents.defaults.model) is OPENCLAW_MODEL below — change the
+# default there, or override per-deploy with a Komodo variable
+# OPENCLAW_MODEL=[[OPENCLAW_MODEL]] on this stack's `environment` in
+# services.toml. It only takes effect on first boot (see the bootstrap note
+# below); after that, change it with `openclaw models set` or the Control UI.
+#
+# gateway.json lives in openclaw.json inside the state volume, generated once
+# by `openclaw onboard` — not by any env var. Upstream expects that run
+# interactively or over SSH, which doesn't fit "push and it deploys". Instead
+# `command` below runs onboarding itself, non-interactively, the first time
+# the container starts with no config on the volume, then execs the real
+# gateway. Redeploys after that see openclaw.json already there and skip
+# straight to the gateway — this block never touches an existing config.
 #
 # Declared in ../komodo/syncs/services.toml.
 
@@ -33,6 +43,7 @@ services:
     environment:
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?OPENCLAW_GATEWAY_TOKEN is required}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
+      OPENCLAW_MODEL: ${OPENCLAW_MODEL:-openrouter/minimax/minimax-m3:free}
       OPENCLAW_GATEWAY_PORT: "18789"
       OPENCLAW_STATE_DIR: /home/node/.openclaw
       OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
@@ -47,22 +58,29 @@ services:
       caddy: http://openclaw.namanvashistha.com
       caddy.reverse_proxy: "{{upstreams 18789}}"
     init: true
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      [
-        "node",
-        "dist/index.js",
-        "gateway",
-        "--bind",
-        "lan",
-        "--port",
-        "18789",
-      ]
+      - |
+        set -e
+        if [ ! -f "$$OPENCLAW_CONFIG_PATH" ]; then
+          node dist/index.js onboard --non-interactive --accept-risk --skip-health \
+            --mode local \
+            --auth-choice openrouter-api-key \
+            --secret-input-mode ref \
+            --gateway-auth token \
+            --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN \
+            --gateway-bind lan \
+            --skip-channels \
+            --no-install-daemon
+          node dist/index.js models set "$$OPENCLAW_MODEL"
+        fi
+        exec node dist/index.js gateway --bind lan --port 18789
     healthcheck:
       test: ["CMD", "node", "dist/docker-healthcheck.js"]
       interval: 30s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 60s
 
 networks:
   caddy:
