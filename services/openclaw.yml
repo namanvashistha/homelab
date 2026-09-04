@@ -35,6 +35,11 @@
 # this only narrows rate-limit/audit attribution to the real proxy hop, it is
 # not what gates access (the gateway token is).
 #
+# Separately, the Control UI (the browser app) checks its own page origin
+# against gateway.controlUi.allowedOrigins before it will even open a
+# connection — unrelated to trustedProxies above. Reasserted every boot too,
+# same as trustedProxies, so it self-heals on an already-onboarded volume.
+#
 # Declared in ../komodo/syncs/services.toml.
 
 services:
@@ -81,6 +86,8 @@ services:
             --no-install-daemon
           node dist/index.js models set "$$OPENCLAW_MODEL"
         fi
+        node dist/index.js config set gateway.controlUi.allowedOrigins \
+          '["https://openclaw.namanvashistha.com"]' --strict-json
         CADDY_IP="$$(node -e "require('dns').resolve4('caddy_proxy',(e,a)=>{if(e)process.exit(1);process.stdout.write(a[0])})" 2>/dev/null)" || true
         if [ -n "$$CADDY_IP" ]; then
           node dist/index.js config set gateway.trustedProxies "[\"$$CADDY_IP\"]" --strict-json
