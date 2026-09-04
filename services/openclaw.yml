@@ -40,6 +40,15 @@
 # connection — unrelated to trustedProxies above. Reasserted every boot too,
 # same as trustedProxies, so it self-heals on an already-onboarded volume.
 #
+# Two more free-tier-specific fixups, also reasserted every boot:
+#   - the default minimax-m3:free route on OpenRouter rejects OpenClaw's
+#     auto-computed max_tokens (derived from the model's huge advertised
+#     context, not its real output cap) with a 400 — pin a sane maxTokens.
+#   - OpenClaw's memory/session sync defaults to OpenAI embeddings, which
+#     we have no key for; OpenRouter isn't a supported embeddings backend
+#     either, so this pins memory search to FTS-only (`"none"`) instead of
+#     adding a second provider just for that.
+#
 # Declared in ../komodo/syncs/services.toml.
 
 services:
@@ -92,6 +101,10 @@ services:
         if [ -n "$$CADDY_IP" ]; then
           node dist/index.js config set gateway.trustedProxies "[\"$$CADDY_IP\"]" --strict-json
         fi
+        node dist/index.js config set agents.defaults.models \
+          '{"openrouter/minimax/minimax-m3:free":{"params":{"maxTokens":8192}}}' \
+          --strict-json --merge
+        node dist/index.js config set memory.search.provider '"none"' --strict-json
         exec node dist/index.js gateway --bind lan --port 18789
     healthcheck:
       test: ["CMD", "node", "dist/docker-healthcheck.js"]
