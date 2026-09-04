@@ -49,6 +49,14 @@
 #     either, so this pins memory search to FTS-only (`"none"`) instead of
 #     adding a second provider just for that.
 #
+# Telegram is the actual daily-driver interface (the iOS app needs either
+# Tailscale or a Cloudflare Access rework to pair correctly — see the repo
+# history — so Telegram sidesteps that entirely). TELEGRAM_BOT_TOKEN is
+# picked up automatically as the default account's token (no config.set
+# needed for it), but the channel still defaults to enabled: false and
+# dmPolicy: "pairing" — open to anyone who finds the bot — so both are
+# pinned down explicitly, every boot, same as everything else above.
+#
 # Declared in ../komodo/syncs/services.toml.
 
 services:
@@ -64,6 +72,8 @@ services:
     environment:
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?OPENCLAW_GATEWAY_TOKEN is required}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}
+      TELEGRAM_USER_ID: ${TELEGRAM_USER_ID:?TELEGRAM_USER_ID is required}
       OPENCLAW_MODEL: ${OPENCLAW_MODEL:-openrouter/minimax/minimax-m3:free}
       OPENCLAW_GATEWAY_PORT: "18789"
       OPENCLAW_STATE_DIR: /home/node/.openclaw
@@ -105,6 +115,10 @@ services:
           '{"openrouter/minimax/minimax-m3:free":{"params":{"maxTokens":8192}}}' \
           --strict-json --merge
         node dist/index.js config set memory.search.provider '"none"' --strict-json
+        node dist/index.js config set channels.telegram.enabled true --strict-json
+        node dist/index.js config set channels.telegram.dmPolicy '"allowlist"' --strict-json
+        node dist/index.js config set channels.telegram.allowFrom \
+          "[\"$$TELEGRAM_USER_ID\"]" --strict-json
         exec node dist/index.js gateway --bind lan --port 18789
     healthcheck:
       test: ["CMD", "node", "dist/docker-healthcheck.js"]
