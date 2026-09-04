@@ -1,0 +1,73 @@
+# openclaw — self-hosted AI gateway (github.com/openclaw/openclaw), pointed at
+# OpenRouter's free-tier models.
+#
+# Tools run inside this container only: no docker.sock mount, so it cannot
+# spawn sandboxed sessions on the host. That keeps the blast radius of a
+# leaked token to this one container.
+#
+# OPENCLAW_GATEWAY_TOKEN is required, unlike upstream's own compose where it
+# defaults to empty. This container sits on the `caddy` network (reachable by
+# every other stack on the box) and behind the tunnel (reachable by the
+# internet) — the token is what actually gates access, the caddy label alone
+# does not. Add a Cloudflare Access policy on openclaw.namanvashistha.com too,
+# the same way komodo.namanvashistha.com has one (see README's first-run
+# section) — Access and the gateway token are two independent locks, not a
+# substitute for each other.
+#
+# Model choice (OpenRouter free tier, agents.defaults.model) is set through
+# the Control UI at https://openclaw.namanvashistha.com after first deploy —
+# it lives in openclaw.json inside the state volume, not in this compose.
+#
+# Declared in ../komodo/syncs/services.toml.
+
+services:
+  openclaw:
+    image: openclaw/openclaw:latest
+    container_name: openclaw
+    restart: unless-stopped
+    cap_drop:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?OPENCLAW_GATEWAY_TOKEN is required}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
+      OPENCLAW_GATEWAY_PORT: "18789"
+      OPENCLAW_STATE_DIR: /home/node/.openclaw
+      OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
+      OPENCLAW_CONFIG_DIR: /home/node/.openclaw
+      OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
+    volumes:
+      - openclaw-state:/home/node/.openclaw
+      - openclaw-auth-secrets:/home/node/.config/openclaw
+    expose: ["18789"]
+    networks: [caddy]
+    labels:
+      caddy: http://openclaw.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 18789}}"
+    init: true
+    command:
+      [
+        "node",
+        "dist/index.js",
+        "gateway",
+        "--bind",
+        "lan",
+        "--port",
+        "18789",
+      ]
+    healthcheck:
+      test: ["CMD", "node", "dist/docker-healthcheck.js"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+networks:
+  caddy:
+    external: true
+
+volumes:
+  openclaw-state:
+  openclaw-auth-secrets:

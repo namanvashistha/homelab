@@ -92,3 +92,27 @@ auto_pull = true
 poll_for_updates = true
 auto_update = true
 webhook_enabled = false
+
+
+[[stack]]
+name = "openclaw"
+description = "Self-hosted AI gateway (github.com/openclaw/openclaw) on OpenRouter free models."
+tags = ["app"]
+deploy = true
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/homelab"
+branch = "main"
+run_directory = "services"
+file_paths = ["openclaw.yml"]
+run_build = false
+auto_pull = true
+poll_for_updates = true
+auto_update = true
+webhook_enabled = false
+environment = """
+OPENCLAW_GATEWAY_TOKEN=[[OPENCLAW_GATEWAY_TOKEN]]
+OPENROUTER_API_KEY=[[OPENROUTER_API_KEY]]
+"""
