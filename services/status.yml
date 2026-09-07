@@ -1,0 +1,38 @@
+# status — reverse-proxies status.namanvashistha.com to the free-tier
+# UptimeRobot public status page (custom domains are a paid feature there).
+#
+# The container does nothing itself; it only exists to carry the caddy
+# labels caddy-docker-proxy reads off the Docker API. `sleep infinity` keeps
+# it "running" (required for the labels to be picked up) at effectively zero
+# cost.
+#
+# The rewrite prepends the status page's id, since UptimeRobot serves it at
+# a path (/o8pmpwXD1J), not at their domain root. header_up sets the Host
+# upstream expects — without it, requests would carry
+# status.namanvashistha.com and UptimeRobot's origin may reject or mis-route
+# them.
+#
+# Caveat: some page assets may hardcode absolute stats.uptimerobot.com URLs,
+# so the browser can still hit that domain directly for those — check the
+# rendered page before relying on this.
+#
+# Declared in ../komodo/syncs/services.toml.
+
+services:
+  status:
+    image: alpine:latest
+    container_name: status
+    restart: unless-stopped
+    command: ["sleep", "infinity"]
+    networks: [caddy]
+    labels:
+      caddy: http://status.namanvashistha.com
+      caddy.rewrite: "* /o8pmpwXD1J{uri}"
+      caddy.reverse_proxy: https://stats.uptimerobot.com
+      caddy.reverse_proxy.header_up: Host stats.uptimerobot.com
+    healthcheck:
+      disable: true
+
+networks:
+  caddy:
+    external: true

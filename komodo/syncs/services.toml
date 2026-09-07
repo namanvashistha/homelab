@@ -92,3 +92,23 @@ auto_pull = true
 poll_for_updates = true
 auto_update = true
 webhook_enabled = false
+
+
+[[stack]]
+name = "status"
+description = "Reverse-proxies status.namanvashistha.com to the free-tier UptimeRobot status page."
+tags = ["app"]
+deploy = true
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/homelab"
+branch = "main"
+run_directory = "services"
+file_paths = ["status.yml"]
+run_build = false
+auto_pull = true
+poll_for_updates = true
+auto_update = true
+webhook_enabled = false
