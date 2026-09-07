@@ -10,11 +10,15 @@
 # it "running" (required for the labels to be picked up) at effectively zero
 # cost.
 #
+# Pulled from AWS's public ECR mirror, not Docker Hub: `alpine:latest` hit
+# Docker Hub's anonymous 429 rate limit on deploy. The ECR mirror carries the
+# same official image with no such limit.
+#
 # Declared in ../komodo/syncs/services.toml.
 
 services:
   status:
-    image: alpine:latest
+    image: public.ecr.aws/docker/library/alpine:latest
     container_name: status
     restart: unless-stopped
     command: ["sleep", "infinity"]
