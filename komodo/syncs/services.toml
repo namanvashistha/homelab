@@ -96,7 +96,7 @@ webhook_enabled = false
 
 [[stack]]
 name = "status"
-description = "Reverse-proxies status.namanvashistha.com to the free-tier UptimeRobot status page."
+description = "Redirects status.namanvashistha.com to the free-tier UptimeRobot status page."
 tags = ["app"]
 deploy = true
 

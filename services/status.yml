@@ -1,20 +1,14 @@
-# status — reverse-proxies status.namanvashistha.com to the free-tier
-# UptimeRobot public status page (custom domains are a paid feature there).
+# status — redirects status.namanvashistha.com to the free-tier UptimeRobot
+# public status page. Custom domains for status pages are a paid UptimeRobot
+# feature; a reverse proxy was tried first but the page's JS makes hardcoded
+# CORS-restricted calls straight to stats.uptimerobot.com, so only the shell
+# rendered and live data never loaded. A redirect has no such problem — the
+# browser just lands on UptimeRobot's own origin.
 #
 # The container does nothing itself; it only exists to carry the caddy
 # labels caddy-docker-proxy reads off the Docker API. `sleep infinity` keeps
 # it "running" (required for the labels to be picked up) at effectively zero
 # cost.
-#
-# The rewrite prepends the status page's id, since UptimeRobot serves it at
-# a path (/o8pmpwXD1J), not at their domain root. header_up sets the Host
-# upstream expects — without it, requests would carry
-# status.namanvashistha.com and UptimeRobot's origin may reject or mis-route
-# them.
-#
-# Caveat: some page assets may hardcode absolute stats.uptimerobot.com URLs,
-# so the browser can still hit that domain directly for those — check the
-# rendered page before relying on this.
 #
 # Declared in ../komodo/syncs/services.toml.
 
@@ -27,9 +21,7 @@ services:
     networks: [caddy]
     labels:
       caddy: http://status.namanvashistha.com
-      caddy.rewrite: "* /o8pmpwXD1J{uri}"
-      caddy.reverse_proxy: https://stats.uptimerobot.com
-      caddy.reverse_proxy.header_up: Host stats.uptimerobot.com
+      caddy.redir: https://stats.uptimerobot.com/o8pmpwXD1J 302
     healthcheck:
       disable: true
 
