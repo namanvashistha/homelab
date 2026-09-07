@@ -68,7 +68,10 @@
 # (offline, GitHub unreachable, unknown arch) never blocks the gateway from
 # starting — the whole block is wrapped to swallow its own errors.
 #
-# Declared in ../komodo/syncs/services.toml.
+# Archived: no longer declared in komodo/syncs/services.toml and not deployed.
+# Kept here (not in services/) so it's excluded from CI's services/*.yml
+# validation loop, since its required env vars no longer have a stack to
+# provide them. Move back to services/ and re-add the stack block to revive.
 
 services:
   openclaw:
