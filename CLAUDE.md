@@ -12,6 +12,11 @@ parsing, and applied on the host.
 `README.md` is the operator's manual (first-run, disaster recovery, alerting
 rationale). This file is the orientation for editing the repo.
 
+
+## Instructions
+- Do not use **Claude** as the Git commit author.
+- Commits must use the actual developer's configured Git identity.
+
 ## Commands
 
 Everything CI does, runnable locally:
