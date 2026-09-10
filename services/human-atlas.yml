@@ -1,0 +1,45 @@
+# human-atlas — 3D anatomy explorer (github.com/ashemag/human-atlas). Not a
+# repo we own, and it publishes no image anywhere — everything else in this
+# repo pulls a vendor/published image ("the box never builds"), but there is
+# no image to pull here. `build.context` points straight at the upstream git
+# repo (Docker clones it itself as the build context; no local checkout, no
+# fork of the source), and `dockerfile_inline` builds + serves it with nginx
+# since the repo itself ships no Dockerfile. It's a static Vite build per its
+# own vercel.json (framework: vite, outputDirectory: dist) — no server-side
+# rendering despite the RSC-adjacent deps sitting in its package.json.
+#
+# run_build = true / auto_pull = false on this stack in services.toml, the
+# opposite of every other service here — `compose pull` fails outright on a
+# locally built image, and this repo's own CI invariant requires the pairing.
+# Base images come from AWS's public ECR mirror, not Docker Hub, for the same
+# reason status.yml does: Docker Hub's anonymous pull rate limit already bit
+# this box once.
+#
+# Declared in ../komodo/syncs/services.toml.
+
+services:
+  human-atlas:
+    build:
+      context: https://github.com/ashemag/human-atlas.git
+      dockerfile_inline: |
+        FROM public.ecr.aws/docker/library/node:22-alpine AS build
+        WORKDIR /app
+        RUN apk add --no-cache python3 make g++
+        COPY . .
+        RUN npm ci
+        RUN npm run build
+
+        FROM public.ecr.aws/docker/library/nginx:alpine
+        COPY --from=build /app/dist /usr/share/nginx/html
+    image: human-atlas:latest
+    container_name: human-atlas
+    restart: unless-stopped
+    expose: ["80"]
+    networks: [caddy]
+    labels:
+      caddy: http://human.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 80}}"
+
+networks:
+  caddy:
+    external: true
