@@ -1,0 +1,169 @@
+# odysseus — self-hosted AI workspace (github.com/odysseus-dev/odysseus) at
+# odysseus.namanvashistha.com. Chat/agents, deep research, mail, docs, tasks.
+#
+# Third on-box build, after human-atlas: upstream publishes no image anywhere,
+# only a Dockerfile and `docker compose up --build`. run_build = true /
+# auto_pull = false in services.toml, per this repo's CI invariant.
+#
+# WHY NOT JUST POINT KOMODO AT UPSTREAM'S OWN COMPOSE. It publishes host ports
+# (`ports:` on all four services) instead of joining the caddy network, and it
+# carries no caddy labels — both of which this box requires and neither of
+# which can be patched into someone else's file. So the four services are
+# restated here. Upstream's compose is the reference for anything below.
+#
+# It is a big build: python:3.14-slim plus build-essential, cmake, chromium,
+# nodejs and a patched Real-ESRGAN wheel stage. Expect a long first deploy and
+# a multi-GB image.
+#
+# Pinned to #main, not the repo's default branch — upstream's default is `dev`
+# and takes changes first; main is the curated one.
+#
+# Declared in ../komodo/syncs/services.toml.
+
+services:
+  odysseus:
+    build:
+      context: https://github.com/odysseus-dev/odysseus.git#main
+    image: odysseus:latest
+    container_name: odysseus
+    restart: unless-stopped
+    expose: ["7000"]
+    networks: [caddy, odysseus]
+    extra_hosts:
+      # Lets it reach an Ollama on the host at http://host.docker.internal:11434.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      searxng:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    environment:
+      # Its own login is the only thing between the internet and an agent that
+      # runs shell commands, so LOCALHOST_BYPASS stays off. Leave the password
+      # unset and the first admin password is printed in the container log.
+      AUTH_ENABLED: "true"
+      LOCALHOST_BYPASS: "false"
+      ODYSSEUS_ADMIN_USER: "${ODYSSEUS_ADMIN_USER:-admin}"
+      ODYSSEUS_ADMIN_PASSWORD: "${ODYSSEUS_ADMIN_PASSWORD:-}"
+      # Cloudflare terminates TLS and caddy forwards plain http, so Odysseus
+      # cannot see the real scheme and would drop the Secure flag on session
+      # cookies. Same reason OAUTH_REDIRECT_BASE_URL has to be spelled out:
+      # it defaults to http://localhost:7000, which no MCP OAuth callback here
+      # will ever hit.
+      SECURE_COOKIES: "true"
+      ALLOWED_ORIGINS: "https://odysseus.namanvashistha.com"
+      OAUTH_REDIRECT_BASE_URL: "https://odysseus.namanvashistha.com"
+      DATABASE_URL: "sqlite:///./data/app.db"
+      SEARXNG_INSTANCE: "http://searxng:8080"
+      CHROMADB_HOST: "chromadb"
+      CHROMADB_PORT: "8000"
+      # All optional — add in Komodo (Settings -> Variables) and wire them up in
+      # services.toml. Without a model provider the UI runs but cannot answer.
+      OPENAI_API_KEY: "${ODY_OPENAI_API_KEY:-}"
+      OLLAMA_BASE_URL: "${ODY_OLLAMA_BASE_URL:-}"
+      HF_TOKEN: "${ODY_HF_TOKEN:-}"
+      TAVILY_API_KEY: "${ODY_TAVILY_API_KEY:-}"
+      DATA_BRAVE_API_KEY: "${ODY_BRAVE_API_KEY:-}"
+    volumes:
+      # Named, not upstream's ./data — a relative path would anchor inside
+      # Komodo's clone at /etc/komodo/stacks/odysseus/ and vanish on re-clone.
+      # The last three are outside /app/data in the image but hold Cookbook
+      # state (ssh identity, model cache, pip-installed serve engines).
+      - odysseus-data:/app/data
+      - odysseus-logs:/app/logs
+      - odysseus-ssh:/app/.ssh
+      - odysseus-hf:/app/.cache/huggingface
+      - odysseus-local:/app/.local
+    labels:
+      caddy: http://odysseus.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 7000}}"
+
+  chromadb:
+    # ghcr, not Docker Hub — the anonymous pull rate limit already bit this box
+    # once (see status.yml). Same for searxng below.
+    image: ghcr.io/chroma-core/chroma:latest
+    container_name: odysseus-chromadb
+    restart: unless-stopped
+    networks: [odysseus]
+    environment:
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chromadb-data:/chroma/chroma
+
+  searxng:
+    # Pinned, not :latest — odysseus waits on this healthcheck before starting,
+    # so a broken upstream tag blocks the whole app. Upstream pins it for the
+    # same reason; bump only after checking a newer tag boots.
+    image: ghcr.io/searxng/searxng:2026.5.31-7159b8aed
+    container_name: odysseus-searxng
+    restart: unless-stopped
+    networks: [odysseus]
+    # searxng ships JSON output off by default, and odysseus reads its JSON API.
+    # Upstream bind-mounts a settings template out of its own checkout to fix
+    # that; this compose lives in a different repo, so the same nine lines are
+    # written here on first boot instead.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ ! -s /etc/searxng/settings.yml ]; then
+          secret="$${SEARXNG_SECRET:-}"
+          if [ -z "$$secret" ]; then
+            secret="$$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+          fi
+          cat > /etc/searxng/settings.yml <<EOF
+        use_default_settings: true
+
+        server:
+          secret_key: "$$secret"
+
+        search:
+          formats:
+            - html
+            - json
+        EOF
+        fi
+        exec /usr/local/searxng/entrypoint.sh
+    environment:
+      SEARXNG_BASE_URL: "http://searxng:8080/"
+      SEARXNG_SECRET: "${ODY_SEARXNG_SECRET:-}"
+    volumes:
+      - searxng-data:/etc/searxng
+    # The image runs as non-root but its entrypoint still chowns /etc/searxng on
+    # first boot and drops privs via su-exec. Without these it fails the
+    # healthcheck on permission errors. Mirrors upstream's cap set.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5).read(1)\""]
+      interval: 5s
+      timeout: 6s
+      retries: 20
+      start_period: 10s
+
+  ntfy:
+    # Push for the mobile companion. Docker Hub only — no ghcr mirror exists —
+    # but auto_pull = false means this is pulled once, not on every deploy.
+    image: docker.io/binwiederhier/ntfy
+    container_name: odysseus-ntfy
+    command: serve
+    restart: unless-stopped
+    networks: [odysseus]
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+
+networks:
+  caddy:
+    external: true
+  odysseus:
+
+volumes:
+  odysseus-data:
+  odysseus-logs:
+  odysseus-ssh:
+  odysseus-hf:
+  odysseus-local:
+  chromadb-data:
+  searxng-data:
+  ntfy-cache:

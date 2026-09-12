@@ -112,3 +112,36 @@ auto_pull = true
 poll_for_updates = true
 auto_update = true
 webhook_enabled = false
+
+
+[[stack]]
+name = "odysseus"
+description = "Self-hosted AI workspace (github.com/odysseus-dev/odysseus) at odysseus.namanvashistha.com — no published image, built from upstream on deploy."
+tags = ["app"]
+deploy = true
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/homelab"
+branch = "main"
+run_directory = "services"
+file_paths = ["odysseus.yml"]
+run_build = true            # no image to pull; built from the upstream git URL
+auto_pull = false           # required pairing with run_build — compose pull fails on a local image
+poll_for_updates = false    # no registry digest to poll for a locally built image
+auto_update = false
+webhook_enabled = false
+
+# All optional. Add each in Komodo (Settings -> Variables, mark secret) before
+# uncommenting its line, or the [[NAME]] resolves to nothing. Without a model
+# provider the UI runs but cannot answer. Leave the admin password unset and
+# the generated one is printed in the container log on first boot.
+environment = """
+#ODYSSEUS_ADMIN_PASSWORD=[[ODYSSEUS_ADMIN_PASSWORD]]
+#ODY_OPENAI_API_KEY=[[ODY_OPENAI_API_KEY]]
+#ODY_OLLAMA_BASE_URL=[[ODY_OLLAMA_BASE_URL]]
+#ODY_HF_TOKEN=[[ODY_HF_TOKEN]]
+#ODY_TAVILY_API_KEY=[[ODY_TAVILY_API_KEY]]
+#ODY_BRAVE_API_KEY=[[ODY_BRAVE_API_KEY]]
+"""
