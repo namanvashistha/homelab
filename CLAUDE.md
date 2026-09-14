@@ -39,9 +39,10 @@ Applying changes (on the host, over ssh — never from this checkout):
 bash ~/homelab/bootstrap/deploy.sh   # layer 1 only; idempotent, root required
 ```
 
-That also installs and restarts `periphery.service` — the binary is fetched
-from the Komodo release matching `KOMODO_PERIPHERY_VERSION` (default: latest),
-so re-running it is how the agent gets updated.
+That also installs `periphery.service` — the binary is fetched from the Komodo
+release matching `KOMODO_PERIPHERY_VERSION` (default: latest), so re-running it
+is how the agent gets updated. Cron runs the same script every ten minutes, so
+this is only for applying a change now rather than waiting.
 
 Layer 2 needs nothing: push to `main`, and the `sync-and-deploy` procedure
 applies it within ten minutes. To skip the wait: Komodo UI → Procedures →
@@ -55,11 +56,19 @@ That constraint decides which file a change belongs in.
 
 **Layer 1 — `bootstrap/`.** caddy, cloudflared, komodo-mongo, komodo-core in
 `docker-compose.yml`, plus `periphery.service` installed on the host by
-`deploy.sh`. Applied only by running `deploy.sh` on the host. Editing
-`bootstrap/docker-compose.yml` and pushing changes nothing. Periphery is the
-process that runs `docker compose`, so it cannot recreate itself or the Core it
-reports to; that is why this layer is manual and why it must stay at four
-containers.
+`deploy.sh`. Periphery is the process that runs `docker compose`, so it cannot
+recreate itself or the Core it reports to; that is why this layer is outside
+Komodo and why it must stay at four containers.
+
+Applied by `deploy.sh` on the host — but it no longer has to be you running it.
+The script writes `/etc/cron.d/homelab-deploy` scheduling itself every ten
+minutes, so a push to `bootstrap/` lands on its own. The catch, which `README.md`
+spells out: nothing alerts on a failed run, so check
+`journalctl -t homelab-deploy` after a bootstrap change. `--no-cron` skips it.
+
+That cadence is why `install_periphery` compares `/etc/komodo/periphery.version`
+before downloading and restarts only on a real change. Make any step there
+unconditional again and the agent gets killed and replaced every ten minutes.
 
 Periphery is native rather than containerised because in a container it read
 the wrong cgroup for memory (server graph pinned at 0.00 GB) and its terminal

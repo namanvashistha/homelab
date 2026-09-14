@@ -18,9 +18,9 @@ one.
 ## Layout
 
 ```
-bootstrap/          Layer 1 — run on the host, by hand, rarely
+bootstrap/          Layer 1 — runs on the host, from cron every 10 min
   deploy.sh           installs docker + periphery.service, makes the caddy network,
-                      runs the below
+                      schedules itself in /etc/cron.d, runs the below
   docker-compose.yml  caddy, cloudflared, komodo-mongo, komodo-core
   .env.example        the only secrets file on the box (5 values)
 
@@ -76,22 +76,37 @@ A flag rather than an env var because the documented install is
 the run looks like it worked and the agent stays unpaired. Piped, it is
 `| sudo bash -s -- -k O-...`.
 
-That something is you, occasionally:
+That something is cron. `deploy.sh` writes `/etc/cron.d/homelab-deploy` on
+every run, scheduling itself every ten minutes — the same cadence Komodo
+reconciles layer 2 at. Push to `bootstrap/` and it lands without an ssh
+session. To run it now rather than waiting:
 
 ```bash
 ssh the-box
-bash ~/homelab/bootstrap/deploy.sh    # pull + compose up -d, idempotent
+sudo bash ~/homelab/bootstrap/deploy.sh    # pull + compose up -d, idempotent
 ```
 
-Editing `bootstrap/docker-compose.yml` and pushing changes nothing until that
-runs. In practice it is a few times a year, mostly Komodo version bumps — and
-those are exactly the changes worth watching rather than waking up to.
+**Know what you are trading.** An earlier attempt at this — a one-shot in its
+own compose project — was built and removed, because its exit code was
+invisible to Komodo and a failed apply looked identical to a successful one.
+The cron has the same blind spot: output goes to `journalctl -t homelab-deploy`
+and nothing alerts on it. What changed is the cost of the other side, not that
+objection. Check it after any bootstrap change:
 
-There *is* a way to automate it (a one-shot in its own compose project, which
-recreates Core and Periphery from outside the blast radius). It was built here
-and then removed: it worked, but its exit code is invisible to Komodo, so a
-failed apply looks identical to a successful one. Not a good trade for four
-containers that change twice a year. `git log` has it if you want it back.
+```bash
+journalctl -t homelab-deploy -n 50
+```
+
+Running that often only works because every step is a no-op when nothing
+changed. `compose up -d` on an unchanged stack does nothing; the periphery
+binary is downloaded only when `/etc/komodo/periphery.version` disagrees with
+the release being installed; and the agent is restarted only when the binary,
+its config, or its unit actually changed. Without those guards the agent would
+be killed and replaced every ten minutes, mid-deploy. `flock -n` means a run
+that overruns is skipped rather than stacked.
+
+`--no-cron` skips writing the file. Deleting it by hand does not stick — the
+next manual run writes it back.
 
 ### Layer 2: Komodo
 
