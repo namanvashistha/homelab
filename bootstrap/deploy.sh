@@ -195,6 +195,13 @@ main() {
     [ -f "$ENV_FILE" ] || fail "missing $ENV_FILE — copy bootstrap/.env.example and fill it in"
 
     log "bringing up the bootstrap stack"
+    # install_periphery refetches the agent at `latest` every run, but `up -d`
+    # reuses a komodo-core:2 image already on the box — so the agent drifts
+    # ahead of Core and the server sits in ServerVersionMismatch. Pull the
+    # pinned Core tag forward so both halves move together. Only this service:
+    # mongo, caddy and cloudflared all float on untagged or `ci` tags, and a
+    # surprise major bump is not what re-running this script is for.
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull komodo-core
     docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans
 
     # After compose, so Core is listening on 127.0.0.1:9120 when Periphery dials.
