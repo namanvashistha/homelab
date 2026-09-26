@@ -36,10 +36,11 @@ send_unreachable_alerts = true
 
 # ON since builds moved to CI. They were off because six stacks compiled here
 # and every deploy pegged the CPU. 1-core LXC, so one busy container is the
-# whole machine — if these flap, raise the thresholds rather than disabling.
+# whole machine, and 80/90 flapped on ordinary work — raised rather than
+# disabled, so only a pegged core alerts.
 send_cpu_alerts = true
-cpu_warning = 80.0
-cpu_critical = 90.0
+cpu_warning = 95.0
+cpu_critical = 99.0
 
 # ON since Periphery became a systemd unit on the host (bootstrap/deploy.sh).
 # Containerised, it read two wrong numbers at once and the graph sat at 0.00 GB
@@ -55,7 +56,7 @@ cpu_critical = 90.0
 # InaccessiblePaths=-/proc/spl fixes 2. Both are needed; either alone still
 # reads zero.
 #
-# 80/90, same as CPU and disk: 1 GiB box, so it idles around half full and the
+# 80/90, same as disk: 1 GiB box, so it idles around half full and the
 # 75/95 defaults would both nag early and warn late.
 #
 # Still broken for anyone running Periphery in a container:
