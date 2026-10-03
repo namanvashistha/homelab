@@ -112,3 +112,28 @@ auto_pull = true
 poll_for_updates = true
 auto_update = true
 webhook_enabled = false
+
+
+[[stack]]
+name = "omniroute"
+description = "AI provider gateway — one OpenAI-compatible endpoint with fallback routing."
+tags = ["app"]
+deploy = true
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/homelab"
+branch = "main"
+run_directory = "services"
+file_paths = ["omniroute.yml"]
+run_build = false
+auto_pull = true
+poll_for_updates = true
+auto_update = true
+webhook_enabled = false
+environment = """
+OMNIROUTE_JWT_SECRET=[[OMNIROUTE_JWT_SECRET]]
+OMNIROUTE_API_KEY_SECRET=[[OMNIROUTE_API_KEY_SECRET]]
+OMNIROUTE_INITIAL_PASSWORD=[[OMNIROUTE_INITIAL_PASSWORD]]
+"""

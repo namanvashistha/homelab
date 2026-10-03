@@ -26,6 +26,7 @@ Everything CI does, runnable locally:
 for f in bootstrap/docker-compose.yml services/*.yml; do
   CF_TUNNEL_TOKEN=x KOMODO_DB_PASSWORD=x KOMODO_ADMIN_PASSWORD=x \
   KOMODO_JWT_SECRET=x KOMODO_WEBHOOK_SECRET=x SB_USER=x \
+  OMNIROUTE_JWT_SECRET=x OMNIROUTE_API_KEY_SECRET=x OMNIROUTE_INITIAL_PASSWORD=x \
   docker compose -f "$f" config -q
 done
 

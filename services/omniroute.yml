@@ -1,0 +1,53 @@
+# omniroute — OpenAI-compatible gateway in front of many AI providers, with
+# fallback routing. Dashboard and /v1 API share port 20128.
+#
+# Too big for this box by its own numbers: ~260 MB heap baseline plus ~300 MB
+# native. So it is capped: mem_limit makes an OOM kill this container rather
+# than mongo or komodo-core. A heap under the baseline 503s every request, so
+# 384 is the floor, not a tuning knob. Upstream's Redis sidecar is dropped; the
+# rate limiter falls back to in-memory, which is fine for one replica.
+#
+# Pulled from ghcr, not Docker Hub, to avoid the anonymous 429 (see status.yml).
+#
+# Secrets are Komodo variables, set on the stack in ../komodo/syncs/services.toml.
+
+services:
+  omniroute:
+    image: ghcr.io/diegosouzapw/omniroute:latest
+    container_name: omniroute
+    restart: unless-stopped
+    stop_grace_period: 40s
+    mem_limit: 640m
+    expose: ["20128"]
+    networks: [caddy]
+    environment:
+      DATA_DIR: /app/data
+      PORT: "20128"
+      OMNIROUTE_MEMORY_MB: "384"
+      OMNIROUTE_PRESSURE_SELF_RESTART: "true"
+      # Public via the tunnel, so /v1 must not be an anonymous LLM proxy.
+      REQUIRE_API_KEY: "true"
+      AUTH_COOKIE_SECURE: "true"            # TLS ends at Cloudflare; browser sees https
+      BASE_URL: https://omniroute.namanvashistha.com
+      OMNIROUTE_PUBLIC_BASE_URL: https://omniroute.namanvashistha.com
+      JWT_SECRET: ${OMNIROUTE_JWT_SECRET:?}
+      API_KEY_SECRET: ${OMNIROUTE_API_KEY_SECRET:?}
+      INITIAL_PASSWORD: ${OMNIROUTE_INITIAL_PASSWORD:?}
+    labels:
+      caddy: http://omniroute.namanvashistha.com
+      caddy.reverse_proxy: "{{upstreams 20128}}"
+    volumes:
+      - omniroute-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+networks:
+  caddy:
+    external: true
+
+volumes:
+  omniroute-data:
