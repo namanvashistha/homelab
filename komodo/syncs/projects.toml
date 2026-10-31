@@ -105,6 +105,36 @@
 # webhook_enabled = false     # polling only, no webhooks here
 #
 # ---------------------------------------------------------------------------
+# DORMANT STACKS
+#
+# hyperbole, chess, foodly and limedb are declared but off. Four flags, each
+# closing a different way back:
+#
+#   deploy = false            RunSync redeploys anything not Running, so
+#                             stopping one in the UI does not stick without
+#                             this. The one that actually holds them down.
+#   auto_update = false       Global Auto Update would otherwise redeploy on a
+#                             new image digest, every ten minutes.
+#   poll_for_updates = false  no registry polling, no StackImageUpdateAvailable.
+#   auto_pull = false         nothing to pull when nothing deploys.
+#   send_alerts = false       a destroyed stack raises StackStateChange forever
+#                             otherwise, which is just Slack noise for a box
+#                             that is off on purpose.
+#
+# Flags alone do not stop a RUNNING stack — they stop it coming back. Destroy
+# each one in the UI after this lands (Destroy, not Stop: `compose down`, so
+# containers and networks go and NAMED VOLUMES STAY). Postgres, MariaDB and the
+# limedb nodes keep their data.
+#
+# To revive: flip the five flags back, push, RunSync, Deploy. Volumes reattach
+# because the compose project name is the stack name and that has not changed.
+# Do not rename these blocks while they are dormant — a rename orphans the
+# volumes silently.
+#
+# Their CI keeps building and pushing to ghcr on every commit. Harmless, just
+# unused; disable the workflow in the app repo to stop that too.
+#
+# ---------------------------------------------------------------------------
 # Projects below.
 #
 # Each one's docker-compose.homelab.yaml is that repo's own compose with the
@@ -119,7 +149,8 @@
 name = "hyperbole"
 description = "C++ ttyd terminal app."
 tags = ["app"]
-deploy = true
+deploy = false
+send_alerts = false
 
 [stack.config]
 server = "Local"
@@ -128,16 +159,17 @@ repo = "namanvashistha/hyperbole"
 branch = "master"
 file_paths = ["docker-compose.homelab.yaml"]
 run_build = false
-auto_pull = true
-poll_for_updates = true
-auto_update = true
+auto_pull = false
+poll_for_updates = false
+auto_update = false
 webhook_enabled = false
 
 [[stack]]
 name = "chess"
 description = "Multiplayer chess — Go backend, Redis, Postgres."
 tags = ["app"]
-deploy = true
+deploy = false
+send_alerts = false
 
 [stack.config]
 server = "Local"
@@ -146,9 +178,9 @@ repo = "namanvashistha/chess"
 branch = "main"
 file_paths = ["docker-compose.homelab.yaml"]
 run_build = false
-auto_pull = true
-poll_for_updates = true
-auto_update = true
+auto_pull = false
+poll_for_updates = false
+auto_update = false
 webhook_enabled = false
 # The lichess-bot service plays the engine on lichess.org and needs a bot:play
 # token. Its compose declares it `:?` rather than defaulting, so a missing
@@ -162,7 +194,8 @@ LICHESS_API_TOKEN=[[LICHESS_API_TOKEN]]
 name = "foodly"
 description = "Foodly app + MariaDB"
 tags = ["app"]
-deploy = true
+deploy = false
+send_alerts = false
 
 [stack.config]
 server = "Local"
@@ -171,9 +204,9 @@ repo = "namanvashistha/foodly"
 branch = "master"
 file_paths = ["docker-compose.homelab.yaml"]
 run_build = false
-auto_pull = true
-poll_for_updates = true
-auto_update = true
+auto_pull = false
+poll_for_updates = false
+auto_update = false
 webhook_enabled = false
 
 # Two images, not one: the repo builds ./web from its own Dockerfile, so its CI
@@ -182,7 +215,8 @@ webhook_enabled = false
 name = "limedb"
 description = "Distributed KV store — 4 nodes + web UI."
 tags = ["app"]
-deploy = true
+deploy = false
+send_alerts = false
 
 [stack.config]
 server = "Local"
@@ -191,9 +225,9 @@ repo = "namanvashistha/limedb"
 branch = "main"
 file_paths = ["docker-compose.homelab.yaml"]
 run_build = false
-auto_pull = true
-poll_for_updates = true
-auto_update = true
+auto_pull = false
+poll_for_updates = false
+auto_update = false
 webhook_enabled = false
 
 [[stack]]
