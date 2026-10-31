@@ -36,11 +36,14 @@ send_unreachable_alerts = true
 
 # ON since builds moved to CI. They were off because six stacks compiled here
 # and every deploy pegged the CPU. 1-core LXC, so one busy container is the
-# whole machine, and 80/90 flapped on ordinary work — raised rather than
-# disabled, so only a pegged core alerts.
+# whole machine, and 80/90 flapped on ordinary work, then 95/99 still nagged —
+# raised rather than disabled, so only a pegged core alerts, and only as a
+# warning. Core compares with >= (bin/core/src/monitor/helpers.rs,
+# get_server_health), so 100.0 fires on a fully pegged core and 101.0 can never
+# be reached: no CPU criticals. The alert closes below 95 (warning minus 5).
 send_cpu_alerts = true
-cpu_warning = 95.0
-cpu_critical = 99.0
+cpu_warning = 100.0
+cpu_critical = 101.0
 
 # ON since Periphery became a systemd unit on the host (bootstrap/deploy.sh).
 # Containerised, it read two wrong numbers at once and the graph sat at 0.00 GB
