@@ -149,8 +149,8 @@ service. Neither touches layer 1, and neither needs host access or a UI click.
 **Then — two files, in two different places for a project.**
 
 1. The compose. For a project, `docker-compose.homelab.yaml` in the app's repo;
-   for a service, `services/<name>.yml` here. Either way modelled on this
-   skeleton:
+   for a service, `services/<name>.yml` here. Either way modelled on
+   `services/whoami.yml`:
 
 ```yaml
 services:
@@ -216,11 +216,8 @@ webhook_enabled = false    # polling only
 2. Push both repos if it is a project.
 3. Wait ≤10 min, or force it: Komodo → Procedures → `sync-and-deploy` → Run.
 4. Confirm at `https://<name>.namanvashistha.com`. If it does not answer, hit
-   `status.namanvashistha.com` first — caddy serves that redirect itself, with
-   no upstream, so an answer proves tunnel → caddy is intact and puts the fault
-   in caddy → container or the service. (`whoami` used to be the better probe,
-   testing the container hop too; it was removed, so that hop is now only
-   testable by `docker exec` on the caddy container.)
+   `whoami.namanvashistha.com` first — that isolates tunnel → caddy → container
+   from a problem in the service itself.
 
 **If it needs a secret:** add it in Komodo (Settings → Variables, mark secret),
 then reference it from that stack's block — not from the compose file:

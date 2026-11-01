@@ -48,11 +48,11 @@
 # Komodo writes it to a .env in the run directory before compose runs.
 #
 # ---------------------------------------------------------------------------
-# TEMPLATE — copy, uncomment, change `<name>` in both places.
+# TEMPLATE — copy, uncomment, change `whoami` in both places.
 # ---------------------------------------------------------------------------
 #
 # [[stack]]
-# name = "<name>"
+# name = "whoami"
 # tags = ["app"]
 # deploy = true              # let RunSync redeploy it when the compose changes
 #
@@ -62,7 +62,7 @@
 # repo = "namanvashistha/homelab"
 # branch = "main"
 # run_directory = "services"
-# file_paths = ["<name>.yml"]
+# file_paths = ["whoami.yml"]
 # run_build = false
 # auto_pull = true
 # poll_for_updates = true
@@ -72,6 +72,26 @@
 # ---------------------------------------------------------------------------
 # Services below.
 # ---------------------------------------------------------------------------
+
+
+[[stack]]
+name = "whoami"
+description = "Echo server — proves the tunnel -> caddy -> container path."
+tags = ["app"]
+deploy = true
+
+[stack.config]
+server = "Local"
+git_provider = "github.com"
+repo = "namanvashistha/homelab"
+branch = "main"
+run_directory = "services"
+file_paths = ["whoami.yml"]
+run_build = false
+auto_pull = true
+poll_for_updates = true
+auto_update = true
+webhook_enabled = false
 
 
 [[stack]]
